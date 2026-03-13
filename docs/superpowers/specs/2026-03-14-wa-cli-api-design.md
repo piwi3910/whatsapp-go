@@ -30,7 +30,7 @@ wa/
 │   ├── root.go              # cobra root command, global flags
 │   ├── auth.go              # login, logout, status
 │   ├── message.go           # send, list, info, delete
-│   ├── group.go             # create, list, info, delete, join, leave, invite, participants
+│   ├── group.go             # create, list, info, join, leave, invite, participants
 │   ├── contact.go           # list, info, block, unblock
 │   ├── media.go             # download
 │   ├── event.go             # listen (stream events to stdout)
@@ -79,7 +79,7 @@ wa/
 ```
 wa login                                    # show QR code in terminal, link device
 wa logout                                   # unlink device
-wa status                                   # show connection/auth status
+wa auth status                               # show connection/auth status
 
 wa send text <jid> <message>                # send text message
 wa send image <jid> <file> [-c caption]     # send image
@@ -89,7 +89,7 @@ wa send document <jid> <file> [-f filename] # send document
 wa send sticker <jid> <file>                # send sticker
 wa send location <jid> <lat> <lon> [-n name]# send location
 wa send contact <jid> <contact-jid>         # send contact card
-wa send reaction <jid> <message-id> <emoji> # react to message
+wa send reaction <jid> <message-id> <emoji> # react to message (sender looked up from local DB)
 
 wa message list <jid> [--limit N] [--before timestamp]
 wa message info <message-id>
@@ -98,7 +98,6 @@ wa message delete <jid> <message-id> [--for-everyone]
 wa group create <name> <jid>...             # create group with participants
 wa group list                               # list all groups
 wa group info <group-jid>
-wa group delete <group-jid>
 wa group join <invite-link>
 wa group leave <group-jid>
 wa group invite <group-jid>                 # get invite link
@@ -124,6 +123,10 @@ wa serve [--port 8080] [--host localhost] [--api-key KEY]
 - `--output json` — machine-readable JSON output (default: human-friendly text/table)
 - `--config <path>` — override config file location
 - `--db <path>` — override database file location
+
+### Stdin Support
+
+`wa send text <jid> -` reads the message body from stdin, useful for long messages or piping from other tools.
 
 ### Exit Codes
 
@@ -167,12 +170,20 @@ Error:
 }
 ```
 
+### Health Endpoint
+
+```
+GET    /api/v1/health            → {state, uptime_seconds, version}
+```
+
+No authentication required. Useful for monitoring and AI agent health checks.
+
 ### Authentication Endpoints
 
 ```
 POST   /api/v1/auth/login       → {qr_code_base64, qr_code_text, timeout}
 POST   /api/v1/auth/logout      → {ok}
-GET    /api/v1/auth/status       → {state: "connected"|"disconnected"|"logged_out", phone_number, push_name}
+GET    /api/v1/auth/status       → {state: "connecting"|"connected"|"disconnected"|"logged_out", phone_number, push_name}
 ```
 
 ### Message Endpoints
@@ -186,6 +197,8 @@ GET    /api/v1/messages          → {messages: [...], cursor}
   Query: jid (required), limit?, before?
 
 GET    /api/v1/messages/:id      → {message}
+  Note: :id is the local DB primary key (composite of chat JID + sender + WhatsApp msg ID,
+  stored as a deterministic hash). The local DB resolves to the full message key internally.
 
 DELETE /api/v1/messages/:id      → {ok}
   Query: for_everyone? (default false)
@@ -205,8 +218,6 @@ POST   /api/v1/groups                              → {group}
 GET    /api/v1/groups                              → {groups: [...]}
 
 GET    /api/v1/groups/:jid                         → {group}
-
-DELETE /api/v1/groups/:jid                         → {ok}
 
 POST   /api/v1/groups/:jid/leave                   → {ok}
 
@@ -237,6 +248,8 @@ POST   /api/v1/contacts/:jid/block     → {ok}
 POST   /api/v1/contacts/:jid/unblock   → {ok}
 ```
 
+Note: `GET /contacts` returns contacts from whatsmeow's synced contact store (contacts the linked phone has synced). This may not include all phone contacts.
+
 ### Media Endpoints
 
 ```
@@ -261,7 +274,7 @@ DELETE /api/v1/webhooks/:id            → {ok}
 
 ```
 GET    /api/v1/events                  → {events: [...], cursor}
-  Query: since (timestamp/cursor), limit? (default 50)
+  Query: after (event ID cursor, default 0), limit? (default 50)
 ```
 
 ## Core Architecture
@@ -290,9 +303,9 @@ func (c *Client) SendDocument(jid string, data []byte, filename string) (string,
 func (c *Client) SendSticker(jid string, data []byte) (string, error)
 func (c *Client) SendLocation(jid string, lat, lon float64, name string) (string, error)
 func (c *Client) SendContact(jid, contactJID string) (string, error)
-func (c *Client) SendReaction(jid, messageID, emoji string) error
-func (c *Client) DeleteMessage(jid, messageID string, forEveryone bool) error
-func (c *Client) MarkRead(jid, messageID string) error
+func (c *Client) SendReaction(jid, senderJID, messageID, emoji string) error
+func (c *Client) DeleteMessage(jid, senderJID, messageID string, forEveryone bool) error
+func (c *Client) MarkRead(jid, senderJID, messageID string) error
 func (c *Client) GetMessages(jid string, limit int, before int64) ([]models.Message, error)
 func (c *Client) CreateGroup(name string, participants []string) (string, error)
 func (c *Client) GetGroups() ([]models.Group, error)
@@ -336,6 +349,32 @@ WhatsApp ──→ whatsmeow ──→ Client.eventHandler()
                         webhook URLs
 ```
 
+## Message Identity
+
+WhatsApp message IDs are not globally unique — a message is identified by the tuple `(chat JID, sender JID, message ID)`. To provide a simple single-key API, we generate a local composite ID:
+
+- **Local ID** = first 16 chars of SHA256(`chatJID + ":" + senderJID + ":" + waMessageID`)
+- This is the `id` column in the `messages` table and what's used in all API/CLI operations
+- The full tuple (chat JID, sender JID, WhatsApp message ID) is stored in the `messages` table for whatsmeow operations
+- CLI commands like `wa message delete <jid> <message-id>` take the local ID; the JID argument provides context for display but the local ID is sufficient for lookup
+
+## CLI vs Server Concurrency
+
+whatsmeow does not support concurrent connections from the same device. The concurrency model:
+
+- **If `wa serve` is running:** CLI commands detect a running server (via PID file at `~/.config/wa/wa.pid`) and proxy through the local REST API automatically. The CLI becomes a thin HTTP client.
+- **If no server is running:** CLI commands start a temporary whatsmeow connection, execute the command, and disconnect. This is slower but works for one-off operations.
+- **`wa event listen`:** Connects to a running server's SSE/polling endpoint. If no server is running, it starts a persistent whatsmeow connection (like a lightweight server without the HTTP API) and disconnects on Ctrl+C.
+- **Lock file:** SQLite database uses WAL mode. A file lock prevents two whatsmeow instances from connecting simultaneously — the second caller gets an error telling them to use `wa serve`.
+
+## Message Storage & Ingestion
+
+Messages are persisted to SQLite in the following scenarios:
+
+- **Server mode (`wa serve`):** The event handler receives all `events.Message` from whatsmeow and writes them to the `messages` table. This is the primary message ingestion path.
+- **CLI mode (no server):** Sent messages are stored after successful send. Received messages are NOT captured (no persistent listener). `wa message list` returns only locally-stored messages and may be empty if the server hasn't been run.
+- **Implication:** For full message history, `wa serve` should be running. This is by design — the server is the persistent component.
+
 ## Storage
 
 ### SQLite Schema
@@ -344,9 +383,10 @@ whatsmeow manages its own tables for device/session state. We add:
 
 ```sql
 CREATE TABLE messages (
-    id          TEXT PRIMARY KEY,
-    jid         TEXT NOT NULL,
-    sender      TEXT NOT NULL,
+    id          TEXT PRIMARY KEY,     -- local composite ID (see Message Identity section)
+    chat_jid    TEXT NOT NULL,        -- chat/conversation JID
+    sender_jid  TEXT NOT NULL,        -- sender JID (needed for reactions, deletions)
+    wa_id       TEXT NOT NULL,        -- original WhatsApp message ID
     type        TEXT NOT NULL,        -- text, image, video, audio, document, sticker, location, contact
     content     TEXT,                 -- text content or JSON metadata
     media_type  TEXT,                 -- MIME type
@@ -360,7 +400,8 @@ CREATE TABLE messages (
     raw_proto   BLOB,                -- original protobuf for lossless storage
     created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX idx_messages_jid_ts ON messages(jid, timestamp DESC);
+CREATE INDEX idx_messages_chat_ts ON messages(chat_jid, timestamp DESC);
+CREATE UNIQUE INDEX idx_messages_wa_key ON messages(chat_jid, sender_jid, wa_id);
 
 CREATE TABLE events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -369,7 +410,17 @@ CREATE TABLE events (
     timestamp   INTEGER NOT NULL,
     created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX idx_events_ts ON events(timestamp);
+CREATE INDEX idx_events_id ON events(id);
+
+CREATE TABLE media_uploads (
+    id          TEXT PRIMARY KEY,     -- media_id returned to caller
+    data        BLOB NOT NULL,        -- raw file bytes
+    mime_type   TEXT NOT NULL,
+    filename    TEXT,
+    size        INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at  INTEGER NOT NULL      -- auto-pruned after 1 hour
+);
 
 CREATE TABLE webhooks (
     id          TEXT PRIMARY KEY,
@@ -418,11 +469,17 @@ POST /api/v1/media/upload → {media_id}
 POST /api/v1/messages/send → {to, type: "image", media_id, caption?}
 ```
 
+The uploaded file is stored temporarily in the `media_uploads` SQLite table with a 1-hour TTL. When `POST /messages/send` references a `media_id`, the server retrieves the file data, uploads to WhatsApp's CDN via whatsmeow `Upload()`, sends the message, and deletes the temporary record. A background goroutine prunes expired uploads every 10 minutes.
+
 **Inline (single request):**
 ```
 POST /api/v1/messages/send (multipart/form-data)
   to, type, file, caption?
 ```
+
+### MIME Type Detection
+
+Primary: file extension mapping. Fallback: `http.DetectContentType` (reads first 512 bytes). Extension is authoritative when present since `DetectContentType` is unreliable for some audio/video formats.
 
 ## Webhook System
 
@@ -431,7 +488,7 @@ POST /api/v1/messages/send (multipart/form-data)
 Via API or config file. Each webhook has:
 - **url** — POST target
 - **events** — array of subscribed event types, or `["*"]` for all
-- **secret** — optional, used for HMAC-SHA256 signature
+- **secret** — optional, used for HMAC-SHA256 signature. Stored in plaintext in SQLite (required for signing outgoing payloads; this is a self-hosted tool)
 
 ### Delivery
 
@@ -458,11 +515,11 @@ connection.logged_out  connection.connected   connection.disconnected
 Ring buffer in SQLite (`events` table), default 10,000 entries.
 
 ```
-GET /api/v1/events?since=1709000000&limit=50
-→ {events: [...], cursor: "1709000150"}
+GET /api/v1/events?after=0&limit=50
+→ {events: [...], cursor: "152"}
 ```
 
-Cursor-based pagination. Use returned `cursor` as next `since` value.
+Cursor-based pagination using the monotonically increasing event `id` (not timestamp, which can have duplicates). Use returned `cursor` as next `after` value. First call uses `after=0` to get all available events.
 
 ## Configuration
 
@@ -487,6 +544,7 @@ webhooks: []                     # can pre-configure webhooks here
 - Connection states: `connecting`, `connected`, `disconnected`, `logged_out`
 - If device is unlinked from phone → `logged_out` state → `connection.logged_out` webhook event
 - No client-side rate limiting — WhatsApp enforces its own limits, errors surfaced directly
+- Max request body size: 100MB (for media uploads). Configurable via `server.max_upload_size` in config
 
 ## Server Lifecycle
 
