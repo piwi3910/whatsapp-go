@@ -45,7 +45,7 @@ func TestDispatch_MatchingEvent(t *testing.T) {
 		t.Fatal("webhook was not called")
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	json.Unmarshal(received, &body)
 	if body["event"] != "message.received" {
 		t.Errorf("event = %v, want message.received", body["event"])

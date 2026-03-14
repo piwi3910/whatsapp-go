@@ -20,7 +20,7 @@ func (c *Client) RegisterEventHandler(handler func(models.Event)) {
 // SetupEventHandlers registers the whatsmeow event handler that processes
 // all incoming events, stores messages, and dispatches to registered handlers.
 func (c *Client) SetupEventHandlers() {
-	c.wac.AddEventHandler(func(evt interface{}) {
+	c.wac.AddEventHandler(func(evt any) {
 		switch v := evt.(type) {
 		case *events.Message:
 			c.handleMessage(v)
@@ -63,7 +63,7 @@ func (c *Client) SetupEventHandlers() {
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.Presence:
-			payload, _ := json.Marshal(map[string]interface{}{
+			payload, _ := json.Marshal(map[string]any{
 				"jid": v.From.String(), "unavailable": v.Unavailable,
 			})
 			c.dispatch(models.Event{
@@ -152,7 +152,7 @@ func (c *Client) handleReceipt(v *events.Receipt) {
 			localID := jid.CompositeMessageID(v.Chat.String(), v.Sender.String(), id)
 			c.store.UpdateReadStatus(localID, true)
 		}
-		payload, _ := json.Marshal(map[string]interface{}{
+		payload, _ := json.Marshal(map[string]any{
 			"chat_jid":    v.Chat.String(),
 			"message_ids": v.MessageIDs,
 		})
@@ -170,7 +170,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 		for i, j := range v.Join {
 			jids[i] = j.String()
 		}
-		payload, _ := json.Marshal(map[string]interface{}{
+		payload, _ := json.Marshal(map[string]any{
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
@@ -182,7 +182,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 		for i, j := range v.Leave {
 			jids[i] = j.String()
 		}
-		payload, _ := json.Marshal(map[string]interface{}{
+		payload, _ := json.Marshal(map[string]any{
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
@@ -194,7 +194,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 		for i, j := range v.Promote {
 			jids[i] = j.String()
 		}
-		payload, _ := json.Marshal(map[string]interface{}{
+		payload, _ := json.Marshal(map[string]any{
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
@@ -206,7 +206,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 		for i, j := range v.Demote {
 			jids[i] = j.String()
 		}
-		payload, _ := json.Marshal(map[string]interface{}{
+		payload, _ := json.Marshal(map[string]any{
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
@@ -250,7 +250,7 @@ func extractMessageContent(msg *waE2E.Message) (msgType, content, caption string
 		return "sticker", "", ""
 	case msg.GetLocationMessage() != nil:
 		loc := msg.GetLocationMessage()
-		locJSON, _ := json.Marshal(map[string]interface{}{
+		locJSON, _ := json.Marshal(map[string]any{
 			"lat": loc.GetDegreesLatitude(), "lon": loc.GetDegreesLongitude(),
 			"name": loc.GetName(),
 		})

@@ -30,7 +30,7 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"groups": groups})
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
 }
 
 func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {

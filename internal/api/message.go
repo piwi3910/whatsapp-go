@@ -171,7 +171,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		cursor = strconv.FormatInt(msgs[len(msgs)-1].Timestamp, 10)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"messages": msgs,
 		"cursor":   cursor,
 	})

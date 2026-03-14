@@ -12,7 +12,7 @@ func (s *Server) handleListContacts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"contacts": contacts})
+	writeJSON(w, http.StatusOK, map[string]any{"contacts": contacts})
 }
 
 func (s *Server) handleGetContact(w http.ResponseWriter, r *http.Request) {

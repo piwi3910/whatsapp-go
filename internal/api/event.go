@@ -31,7 +31,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		cursor = strconv.FormatInt(events[len(events)-1].ID, 10)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"events": events,
 		"cursor": cursor,
 	})

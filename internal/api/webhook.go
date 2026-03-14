@@ -50,7 +50,7 @@ func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"webhooks": webhooks})
+	writeJSON(w, http.StatusOK, map[string]any{"webhooks": webhooks})
 }
 
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {

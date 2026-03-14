@@ -10,7 +10,7 @@ import (
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := s.client.Status()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"state":          status.State,
 		"uptime_seconds": int(time.Since(s.startTime).Seconds()),
 		"version":        s.version,
@@ -38,7 +38,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"qr_code_base64": base64.StdEncoding.EncodeToString(qrPNG),
 		"qr_code_text":   evt.Code,
 		"timeout":        60,
