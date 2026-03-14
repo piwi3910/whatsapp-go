@@ -117,14 +117,14 @@ func (s *Store) UpdateReadStatus(id string, read bool) error {
 	return nil
 }
 
-func nullString(v string) interface{} {
+func nullString(v string) any {
 	if v == "" {
 		return nil
 	}
 	return v
 }
 
-func nullInt64(v int64) interface{} {
+func nullInt64(v int64) any {
 	if v == 0 {
 		return nil
 	}
