@@ -229,7 +229,7 @@ func (p *proxyClient) GetMessage(messageID string) (*models.Message, error) {
 	return &msg, p.decodeResponse(resp, &msg)
 }
 func (p *proxyClient) CreateGroup(name string, participants []string) (*models.Group, error) {
-	resp, err := p.do("POST", "/api/v1/groups", map[string]interface{}{"name": name, "participants": participants})
+	resp, err := p.do("POST", "/api/v1/groups", map[string]any{"name": name, "participants": participants})
 	if err != nil {
 		return nil, err
 	}

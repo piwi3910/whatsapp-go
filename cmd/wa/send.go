@@ -69,7 +69,7 @@ func makeSendMediaCmd(use, short, msgType string, needsCaption bool) *cobra.Comm
 				fname = sendFilename
 			}
 
-			var resp interface{}
+			var resp any
 			switch msgType {
 			case "image":
 				resp, err = c.SendImage(args[0], data, fname, sendCaption)
