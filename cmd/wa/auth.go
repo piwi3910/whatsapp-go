@@ -3,8 +3,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
@@ -33,8 +36,9 @@ func newClient() (client.Service, *store.Store, func()) {
 		exitError(fmt.Sprintf("opening database: %v", err), 1)
 	}
 
+	waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
 	log := waLog.Stdout("wa", "WARN", true)
-	c, err := client.New(s, cfg.Database.Path, log)
+	c, err := client.New(s, waDBPath, log)
 	if err != nil {
 		s.Close()
 		exitError(fmt.Sprintf("creating client: %v", err), 1)
@@ -51,21 +55,44 @@ var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Link a WhatsApp device via QR code",
 	Run: func(cmd *cobra.Command, args []string) {
-		c, _, cleanup := newClient()
-		defer cleanup()
+		// For login, we need the store but handle the client lifecycle manually
+		// because we must keep the connection alive until pairing completes.
+		s, err := store.New(cfg.Database.Path)
+		if err != nil {
+			exitError(fmt.Sprintf("opening database: %v", err), 1)
+		}
+		defer s.Close()
+
+		waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
+		log := waLog.Stdout("wa", "WARN", true)
+		c, err := client.New(s, waDBPath, log)
+		if err != nil {
+			exitError(fmt.Sprintf("creating client: %v", err), 1)
+		}
 
 		qrChan, err := c.Login()
 		if err != nil {
 			exitError(err.Error(), 2)
 		}
 
+		fmt.Println("Scan the QR code below with WhatsApp (Linked Devices > Link a Device):")
+		fmt.Println()
 		for evt := range qrChan {
 			if evt.Done {
-				fmt.Println("Login successful!")
+				fmt.Println("\nQR scanned! Completing pairing...")
+				// Wait for whatsmeow to fully connect (handshake, key exchange, device storage)
+				if c.WaitForConnection(30 * time.Second) {
+					fmt.Println("Login successful!")
+				} else {
+					fmt.Println("Login completed (sync may still be in progress).")
+				}
+				// Brief pause for final DB writes
+				time.Sleep(2 * time.Second)
+				c.Disconnect()
 				return
 			}
-			// Print QR code text for terminal rendering
-			fmt.Printf("Scan this QR code with WhatsApp:\n%s\n\n", evt.Code)
+			qrterminal.Generate(evt.Code, qrterminal.L, os.Stdout)
+			fmt.Println()
 		}
 	},
 }

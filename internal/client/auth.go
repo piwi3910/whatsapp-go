@@ -7,6 +7,8 @@ import (
 
 // Login initiates QR-based device linking. Returns a channel of QR events.
 // The caller should display QR codes from the channel until Done is true.
+// After Done, the caller should keep the client connected for a few seconds
+// to allow whatsmeow to complete key exchange and device storage.
 func (c *Client) Login() (<-chan QREvent, error) {
 	if c.wac.Store.ID != nil {
 		return nil, fmt.Errorf("already logged in")
@@ -65,7 +67,6 @@ func (c *Client) Status() ConnectionStatus {
 		status.State = "connecting"
 	}
 
-	// Get phone number and push name from device store
 	status.PhoneNumber = c.wac.Store.ID.User
 	status.PushName = c.wac.Store.PushName
 

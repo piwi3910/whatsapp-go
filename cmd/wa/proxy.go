@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"time"
 
 	"github.com/piwi3910/whatsapp-go/internal/client"
 	"github.com/piwi3910/whatsapp-go/internal/models"
@@ -68,9 +69,10 @@ func (p *proxyClient) decodeResponse(resp *http.Response, target any) error {
 
 // Implement Service interface methods by delegating to REST API.
 
-func (p *proxyClient) Connect() error    { return nil } // server is already connected
-func (p *proxyClient) Disconnect()       {}
-func (p *proxyClient) IsConnected() bool { return true }
+func (p *proxyClient) Connect() error                          { return nil }
+func (p *proxyClient) Disconnect()                             {}
+func (p *proxyClient) IsConnected() bool                       { return true }
+func (p *proxyClient) WaitForConnection(timeout time.Duration) bool { return true }
 
 func (p *proxyClient) Status() client.ConnectionStatus {
 	resp, err := p.do("GET", "/api/v1/auth/status", nil)

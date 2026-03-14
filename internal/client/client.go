@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -24,11 +25,10 @@ type Client struct {
 	handlers []func(models.Event)
 }
 
-// New creates a new Client. dbPath is the SQLite database path used for
-// whatsmeow's device store. The app store is passed separately.
+// New creates a new Client. dbPath is the SQLite database path for whatsmeow's
+// device store (separate from the app store to avoid driver conflicts).
 func New(appStore *appstore.Store, dbPath string, log waLog.Logger) (*Client, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(on)", dbPath)
-	container, err := sqlstore.New(context.Background(), "sqlite", dsn, log)
+	container, err := sqlstore.New(context.Background(), "sqlite", "file:"+dbPath+"?_pragma=foreign_keys(on)", log)
 	if err != nil {
 		return nil, fmt.Errorf("creating whatsmeow container: %w", err)
 	}
@@ -59,4 +59,9 @@ func (c *Client) Disconnect() {
 // IsConnected returns whether the client is connected.
 func (c *Client) IsConnected() bool {
 	return c.wac.IsConnected()
+}
+
+// WaitForConnection blocks until the client is connected or timeout expires.
+func (c *Client) WaitForConnection(timeout time.Duration) bool {
+	return c.wac.WaitForConnection(timeout)
 }

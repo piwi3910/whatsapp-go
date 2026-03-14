@@ -67,7 +67,8 @@ var serveCmd = &cobra.Command{
 
 		// Create client
 		waLogger := waLog.Stdout("wa", "WARN", true)
-		c, err := client.New(s, cfg.Database.Path, waLogger)
+		waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
+		c, err := client.New(s, waDBPath, waLogger)
 		if err != nil {
 			exitError(fmt.Sprintf("creating client: %v", err), 1)
 		}

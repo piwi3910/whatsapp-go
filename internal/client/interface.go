@@ -1,6 +1,10 @@
 package client
 
-import "github.com/piwi3910/whatsapp-go/internal/models"
+import (
+	"time"
+
+	"github.com/piwi3910/whatsapp-go/internal/models"
+)
 
 // Service defines all WhatsApp operations used by the API and CLI layers.
 type Service interface {
@@ -8,6 +12,7 @@ type Service interface {
 	Connect() error
 	Disconnect()
 	IsConnected() bool
+	WaitForConnection(timeout time.Duration) bool
 	Status() ConnectionStatus
 
 	// Auth
