@@ -37,10 +37,20 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		req.ContactJID = r.FormValue("contact_jid")
 		req.Name = r.FormValue("name")
 		if lat := r.FormValue("lat"); lat != "" {
-			req.Lat, _ = strconv.ParseFloat(lat, 64)
+			v, err := strconv.ParseFloat(lat, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid lat value")
+				return
+			}
+			req.Lat = v
 		}
 		if lon := r.FormValue("lon"); lon != "" {
-			req.Lon, _ = strconv.ParseFloat(lon, 64)
+			v, err := strconv.ParseFloat(lon, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid lon value")
+				return
+			}
+			req.Lon = v
 		}
 	} else {
 		writeError(w, http.StatusBadRequest, "INVALID_CONTENT_TYPE", "expected application/json or multipart/form-data")

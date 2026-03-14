@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -19,6 +20,7 @@ type Client struct {
 	wac      *whatsmeow.Client
 	store    *appstore.Store
 	log      waLog.Logger
+	mu       sync.RWMutex
 	handlers []func(models.Event)
 }
 

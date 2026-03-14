@@ -1,7 +1,7 @@
-// cmd/wa/serve.go
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -47,7 +47,6 @@ var serveCmd = &cobra.Command{
 		if cfg.APIKey == "" {
 			cfg.APIKey = config.GenerateAPIKey()
 			log.Printf("Generated API key: %s", cfg.APIKey)
-			// Save to config
 			if configPath != "" {
 				config.Save(configPath, cfg)
 			}
@@ -73,16 +72,13 @@ var serveCmd = &cobra.Command{
 			exitError(fmt.Sprintf("creating client: %v", err), 1)
 		}
 
-		// Setup event handlers
+		// Setup webhook dispatcher
 		disp := webhook.New()
 
-		// Load webhooks from store
 		webhooks, _ := s.GetWebhooks()
 		for _, wh := range webhooks {
 			disp.Register(wh)
 		}
-
-		// Load webhooks from config
 		for i, wh := range cfg.Webhooks {
 			hook := models.Webhook{
 				ID:     fmt.Sprintf("cfg_%d", i),
@@ -93,11 +89,9 @@ var serveCmd = &cobra.Command{
 			disp.Register(hook)
 		}
 
-		// Register event handler that dispatches to webhooks
 		c.RegisterEventHandler(func(evt models.Event) {
 			disp.Dispatch(evt)
 		})
-
 		c.SetupEventHandlers()
 
 		// Connect to WhatsApp (if previously logged in)
@@ -111,39 +105,54 @@ var serveCmd = &cobra.Command{
 		}
 		defer pidfile.Remove(pidPath)
 
-		// Start media upload pruning goroutine
+		// Context for background goroutines — cancelled on shutdown
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Media upload pruning goroutine
 		go func() {
 			ticker := time.NewTicker(10 * time.Minute)
 			defer ticker.Stop()
-			for range ticker.C {
-				if n, err := s.PruneExpiredUploads(); err != nil {
-					log.Printf("prune uploads: %v", err)
-				} else if n > 0 {
-					log.Printf("pruned %d expired media uploads", n)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if n, err := s.PruneExpiredUploads(); err != nil {
+						log.Printf("prune uploads: %v", err)
+					} else if n > 0 {
+						log.Printf("pruned %d expired media uploads", n)
+					}
 				}
 			}
 		}()
 
-		// Start event pruning goroutine
+		// Event pruning goroutine
 		go func() {
 			ticker := time.NewTicker(5 * time.Minute)
 			defer ticker.Stop()
-			for range ticker.C {
-				if err := s.PruneEvents(cfg.Events.MaxBuffer); err != nil {
-					log.Printf("prune events: %v", err)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := s.PruneEvents(cfg.Events.MaxBuffer); err != nil {
+						log.Printf("prune events: %v", err)
+					}
 				}
 			}
 		}()
 
-		// Create and start API server
+		// Create API server
 		srv := api.NewServer(c, s, disp, cfg.APIKey, version, cfg.Server.MaxUploadSize)
 
-		// Graceful shutdown
+		// Graceful shutdown on signal
 		go func() {
 			sig := make(chan os.Signal, 1)
 			signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 			<-sig
 			log.Println("Shutting down...")
+			cancel() // Stop background goroutines
 			srv.Stop()
 			c.Disconnect()
 		}()

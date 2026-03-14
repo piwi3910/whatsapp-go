@@ -14,6 +14,8 @@ import (
 
 // RegisterEventHandler registers a handler that receives mapped events.
 func (c *Client) RegisterEventHandler(handler func(models.Event)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.handlers = append(c.handlers, handler)
 }
 
@@ -133,10 +135,15 @@ func (c *Client) handleMessage(v *events.Message) {
 
 	c.store.InsertMessage(msg)
 
+	// Determine event type — reactions and deletions get their own event types
 	eventType := models.EventMessageReceived
 	if info.IsFromMe {
 		eventType = models.EventMessageSent
 	}
+	if msgType == "reaction" {
+		eventType = models.EventMessageReaction
+	}
+
 	payload, _ := json.Marshal(msg)
 	c.dispatch(models.Event{
 		Type:      eventType,
@@ -148,7 +155,6 @@ func (c *Client) handleMessage(v *events.Message) {
 func (c *Client) handleReceipt(v *events.Receipt) {
 	if v.Type == "read" {
 		for _, id := range v.MessageIDs {
-			// Try to find and update in local store (best effort)
 			localID := jid.CompositeMessageID(v.Chat.String(), v.Sender.String(), id)
 			c.store.UpdateReadStatus(localID, true)
 		}
@@ -225,8 +231,12 @@ func (c *Client) dispatch(evt models.Event) {
 	// Store event in DB
 	c.store.InsertEvent(&evt)
 
-	// Fan out to registered handlers
-	for _, h := range c.handlers {
+	// Fan out to registered handlers (read lock since handlers are append-only)
+	c.mu.RLock()
+	handlers := c.handlers
+	c.mu.RUnlock()
+
+	for _, h := range handlers {
 		h(evt)
 	}
 }

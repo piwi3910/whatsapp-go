@@ -78,7 +78,9 @@ func (p *proxyClient) Status() client.ConnectionStatus {
 		return client.ConnectionStatus{State: "error"}
 	}
 	var status client.ConnectionStatus
-	p.decodeResponse(resp, &status)
+	if err := p.decodeResponse(resp, &status); err != nil {
+		return client.ConnectionStatus{State: "error"}
+	}
 	return status
 }
 
@@ -114,7 +116,9 @@ func (p *proxyClient) sendMedia(jid string, data []byte, filename, caption, msgT
 	if err != nil {
 		return nil, err
 	}
-	part.Write(data)
+	if _, err := part.Write(data); err != nil {
+		return nil, fmt.Errorf("writing media data: %w", err)
+	}
 	writer.Close()
 
 	req, err := http.NewRequest("POST", p.baseURL+"/api/v1/media/upload", body)

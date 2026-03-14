@@ -105,8 +105,14 @@ var sendLocationCmd = &cobra.Command{
 			exitError(err.Error(), 1)
 		}
 
-		lat, _ := strconv.ParseFloat(args[1], 64)
-		lon, _ := strconv.ParseFloat(args[2], 64)
+		lat, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			exitError(fmt.Sprintf("invalid latitude %q: %v", args[1], err), 1)
+		}
+		lon, err := strconv.ParseFloat(args[2], 64)
+		if err != nil {
+			exitError(fmt.Sprintf("invalid longitude %q: %v", args[2], err), 1)
+		}
 		resp, err := c.SendLocation(args[0], lat, lon, sendName)
 		if err != nil {
 			exitError(err.Error(), 1)
