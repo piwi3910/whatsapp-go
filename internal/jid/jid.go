@@ -6,38 +6,25 @@ import (
 	"strings"
 )
 
-const (
-	userSuffix  = "@s.whatsapp.net"
-	groupSuffix = "@g.us"
-)
-
-// NormalizeJID accepts a phone number in various formats or an existing JID
-// and returns a normalized JID string.
-//
-// Accepted inputs:
-//   - "+1234567890"      → "1234567890@s.whatsapp.net"
-//   - "1234567890"       → "1234567890@s.whatsapp.net"
-//   - "1234567890@s.whatsapp.net" → "1234567890@s.whatsapp.net" (unchanged)
-//   - "groupid@g.us"    → "groupid@g.us" (unchanged)
-func NormalizeJID(input string) string {
+// NormalizeJID converts flexible phone number input to a full WhatsApp JID.
+// Accepts: "+1234567890", "1234567890", "1234567890@s.whatsapp.net", "groupid@g.us"
+func NormalizeJID(input string) (string, error) {
 	input = strings.TrimSpace(input)
-
-	// Already a full JID — return as-is.
-	if strings.Contains(input, "@") {
-		return input
+	if input == "" {
+		return "", fmt.Errorf("empty JID input")
 	}
-
-	// Strip leading '+'.
-	number := strings.TrimPrefix(input, "+")
-
-	return number + userSuffix
+	// Already a full JID
+	if strings.Contains(input, "@") {
+		return input, nil
+	}
+	// Strip leading +
+	phone := strings.TrimPrefix(input, "+")
+	return phone + "@s.whatsapp.net", nil
 }
 
-// CompositeMessageID returns the first 16 hex characters of the SHA-256 hash
-// of "chatJID:senderJID:waMessageID". This produces a short, stable,
-// collision-resistant identifier suitable for use as a database primary key.
+// CompositeMessageID generates a deterministic 16-char local ID from the
+// WhatsApp message key tuple (chatJID, senderJID, waMessageID).
 func CompositeMessageID(chatJID, senderJID, waMessageID string) string {
-	raw := fmt.Sprintf("%s:%s:%s", chatJID, senderJID, waMessageID)
-	sum := sha256.Sum256([]byte(raw))
-	return fmt.Sprintf("%x", sum[:])[:16]
+	h := sha256.Sum256([]byte(chatJID + ":" + senderJID + ":" + waMessageID))
+	return fmt.Sprintf("%x", h[:])[:16]
 }

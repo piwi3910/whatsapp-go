@@ -1,51 +1,37 @@
 package pidfile
 
 import (
-	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 )
 
-// Write writes the current process PID to path, creating parent directories
-// as needed. The file is written with mode 0o644.
+// Write creates a PID file at path containing the current process ID.
 func Write(path string) error {
-	if err := os.MkdirAll(parentDir(path), 0o700); err != nil {
-		return fmt.Errorf("pidfile: create directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
 	}
-	data := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0644)
 }
 
-// Read reads and returns the PID stored in path. It returns an error if the
-// file does not exist or does not contain a valid integer.
+// Read returns the PID stored in the file.
 func Read(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, fmt.Errorf("pidfile: read: %w", err)
+		return 0, err
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, fmt.Errorf("pidfile: parse pid: %w", err)
-	}
-	return pid, nil
+	return strconv.Atoi(strings.TrimSpace(string(data)))
 }
 
-// Remove deletes the pid file at path. It returns nil if the file does not
-// exist.
-func Remove(path string) error {
-	err := os.Remove(path)
-	if err != nil && errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
+// Remove deletes the PID file.
+func Remove(path string) {
+	os.Remove(path)
 }
 
-// IsRunning returns true when a PID file exists at path and the process with
-// that PID is currently alive. It returns false if the file does not exist, the
-// PID cannot be read, or the process is not running.
+// IsRunning checks if a process with the PID in the file is still alive.
 func IsRunning(path string) bool {
 	pid, err := Read(path)
 	if err != nil {
@@ -55,27 +41,16 @@ func IsRunning(path string) bool {
 	if err != nil {
 		return false
 	}
-	// On Unix, FindProcess always succeeds; we must send signal 0 to check
-	// whether the process is alive.
+	// Signal 0 checks if process exists without actually sending a signal
 	err = proc.Signal(syscall.Signal(0))
 	return err == nil
 }
 
-// ServerAddress returns "host:port" for the server recorded in pidPath.
-// This is a convenience helper that lets callers derive the API base URL
-// without having to read the full config. The host and port values come from
-// the caller (typically loaded from Config) rather than the pid file itself.
+// ServerAddress returns the running server's address if a server is detected.
+// Returns empty string if no server is running.
 func ServerAddress(pidPath, host string, port int) string {
-	return fmt.Sprintf("%s:%d", host, port)
-}
-
-// parentDir returns the directory component of path, defaulting to "." when
-// there is no directory separator.
-func parentDir(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			return path[:i]
-		}
+	if !IsRunning(pidPath) {
+		return ""
 	}
-	return "."
+	return fmt.Sprintf("http://%s:%d", host, port)
 }

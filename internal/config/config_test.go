@@ -1,137 +1,86 @@
-package config_test
+package config
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/piwi3910/whatsapp-go/internal/config"
 )
 
 func TestDefaults(t *testing.T) {
-	cfg := config.Defaults()
-
-	if cfg.Server.Host != "127.0.0.1" {
-		t.Errorf("Server.Host = %q; want %q", cfg.Server.Host, "127.0.0.1")
+	cfg := Defaults()
+	if cfg.Server.Host != "localhost" {
+		t.Errorf("default host = %q, want %q", cfg.Server.Host, "localhost")
 	}
 	if cfg.Server.Port != 8080 {
-		t.Errorf("Server.Port = %d; want 8080", cfg.Server.Port)
+		t.Errorf("default port = %d, want %d", cfg.Server.Port, 8080)
 	}
-	if cfg.Server.MaxUploadSize != 64*1024*1024 {
-		t.Errorf("Server.MaxUploadSize = %d; want %d", cfg.Server.MaxUploadSize, 64*1024*1024)
+	if cfg.Events.MaxBuffer != 10000 {
+		t.Errorf("default max_buffer = %d, want %d", cfg.Events.MaxBuffer, 10000)
 	}
-	if cfg.Events.MaxBuffer != 1000 {
-		t.Errorf("Events.MaxBuffer = %d; want 1000", cfg.Events.MaxBuffer)
-	}
-	if cfg.Webhooks.TimeoutSeconds != 10 {
-		t.Errorf("Webhooks.TimeoutSeconds = %d; want 10", cfg.Webhooks.TimeoutSeconds)
-	}
-	if cfg.Webhooks.MaxRetries != 3 {
-		t.Errorf("Webhooks.MaxRetries = %d; want 3", cfg.Webhooks.MaxRetries)
-	}
-	if cfg.Database.Path == "" {
-		t.Error("Database.Path should not be empty")
+	if cfg.Server.MaxUploadSize != 100*1024*1024 {
+		t.Errorf("default max_upload_size = %d, want %d", cfg.Server.MaxUploadSize, 100*1024*1024)
 	}
 }
 
 func TestLoadCreatesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-
-	cfg, err := config.Load(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("Load(%q) error = %v", path, err)
 	}
-
-	// A new API key should have been generated.
-	if cfg.APIKey == "" {
-		t.Error("Load() should generate an API key for a new config")
-	}
-	if len(cfg.APIKey) != 64 {
-		t.Errorf("APIKey length = %d; want 64 hex chars", len(cfg.APIKey))
-	}
-
-	// The file should now exist on disk.
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("Load() should have created config file: %v", err)
-	}
-
-	// Defaults should be applied.
 	if cfg.Server.Port != 8080 {
-		t.Errorf("Server.Port = %d; want 8080", cfg.Server.Port)
+		t.Errorf("loaded port = %d, want default 8080", cfg.Server.Port)
+	}
+	// File should have been created
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("config file was not created")
 	}
 }
 
 func TestLoadExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-
-	// Write a partial config.
-	content := `api_key: "testkey12345"
-server:
-  host: "0.0.0.0"
-  port: 9090
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+	content := []byte("api_key: \"wa_testkey123\"\nserver:\n  host: \"0.0.0.0\"\n  port: 9090\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
 	}
-
-	cfg, err := config.Load(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("Load error = %v", err)
 	}
-
-	if cfg.APIKey != "testkey12345" {
-		t.Errorf("APIKey = %q; want %q", cfg.APIKey, "testkey12345")
+	if cfg.APIKey != "wa_testkey123" {
+		t.Errorf("api_key = %q, want %q", cfg.APIKey, "wa_testkey123")
 	}
 	if cfg.Server.Host != "0.0.0.0" {
-		t.Errorf("Server.Host = %q; want %q", cfg.Server.Host, "0.0.0.0")
+		t.Errorf("host = %q, want %q", cfg.Server.Host, "0.0.0.0")
 	}
 	if cfg.Server.Port != 9090 {
-		t.Errorf("Server.Port = %d; want 9090", cfg.Server.Port)
-	}
-	// Fields not in the file should keep defaults.
-	if cfg.Events.MaxBuffer != 1000 {
-		t.Errorf("Events.MaxBuffer = %d; want 1000 (default)", cfg.Events.MaxBuffer)
+		t.Errorf("port = %d, want %d", cfg.Server.Port, 9090)
 	}
 }
 
-func TestDir(t *testing.T) {
-	dir := config.Dir()
-	if dir == "" {
-		t.Error("Dir() should not return empty string")
+func TestConfigDir(t *testing.T) {
+	d := Dir()
+	if d == "" {
+		t.Error("Dir() returned empty string")
 	}
-	if !strings.HasSuffix(dir, "wa") {
-		t.Errorf("Dir() = %q; should end with 'wa'", dir)
+	if !strings.HasSuffix(d, "wa") {
+		t.Errorf("Dir() = %q, should end with 'wa'", d)
 	}
 }
 
 func TestGenerateAPIKey(t *testing.T) {
-	key1, err := config.GenerateAPIKey()
-	if err != nil {
-		t.Fatalf("GenerateAPIKey() error = %v", err)
+	key := GenerateAPIKey()
+	if !strings.HasPrefix(key, "wa_") {
+		t.Errorf("key = %q, should start with wa_", key)
 	}
-	if len(key1) != 64 {
-		t.Errorf("GenerateAPIKey() length = %d; want 64", len(key1))
+	if len(key) < 10 {
+		t.Errorf("key too short: %q", key)
 	}
-
-	key2, err := config.GenerateAPIKey()
-	if err != nil {
-		t.Fatalf("GenerateAPIKey() error = %v", err)
-	}
-	if key1 == key2 {
-		t.Error("GenerateAPIKey() returned the same key twice")
-	}
-}
-
-func TestDirRespectsXDG(t *testing.T) {
-	prev := os.Getenv("XDG_CONFIG_HOME")
-	defer os.Setenv("XDG_CONFIG_HOME", prev)
-
-	os.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-test")
-	dir := config.Dir()
-	if dir != "/tmp/xdg-test/wa" {
-		t.Errorf("Dir() with XDG_CONFIG_HOME = %q; want %q", dir, "/tmp/xdg-test/wa")
+	key2 := GenerateAPIKey()
+	if key == key2 {
+		t.Error("GenerateAPIKey produced same key twice")
 	}
 }

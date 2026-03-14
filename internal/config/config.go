@@ -3,120 +3,108 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds all runtime configuration for the wa daemon.
+// Config is the top-level configuration.
 type Config struct {
 	APIKey   string         `yaml:"api_key"`
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	Events   EventsConfig   `yaml:"events"`
-	Webhooks WebhooksConfig `yaml:"webhooks"`
+	Webhooks []WebhookConfig `yaml:"webhooks"`
 }
 
-// ServerConfig controls the HTTP listener.
+// ServerConfig holds HTTP server settings.
 type ServerConfig struct {
 	Host          string `yaml:"host"`
 	Port          int    `yaml:"port"`
 	MaxUploadSize int64  `yaml:"max_upload_size"`
 }
 
-// DatabaseConfig controls the SQLite store.
+// DatabaseConfig holds database settings.
 type DatabaseConfig struct {
 	Path string `yaml:"path"`
 }
 
-// EventsConfig controls the in-process event bus.
+// EventsConfig holds event buffer settings.
 type EventsConfig struct {
 	MaxBuffer int `yaml:"max_buffer"`
 }
 
-// WebhooksConfig controls outgoing webhook delivery.
-type WebhooksConfig struct {
-	TimeoutSeconds int `yaml:"timeout_seconds"`
-	MaxRetries     int `yaml:"max_retries"`
+// WebhookConfig represents a webhook defined in the config file.
+type WebhookConfig struct {
+	URL    string   `yaml:"url"`
+	Events []string `yaml:"events"`
+	Secret string   `yaml:"secret,omitempty"`
 }
 
-// Dir returns the default application configuration directory:
-// $XDG_CONFIG_HOME/wa or ~/.config/wa.
+// Dir returns the default config directory (~/.config/wa/).
 func Dir() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wa")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".wa"
 	}
-	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "wa")
 }
 
-// Defaults returns a Config populated with sensible defaults.
+// Defaults returns a Config with default values.
 func Defaults() Config {
 	return Config{
-		APIKey: "",
 		Server: ServerConfig{
-			Host:          "127.0.0.1",
+			Host:          "localhost",
 			Port:          8080,
-			MaxUploadSize: 64 * 1024 * 1024, // 64 MiB
+			MaxUploadSize: 100 * 1024 * 1024, // 100MB
 		},
 		Database: DatabaseConfig{
 			Path: filepath.Join(Dir(), "wa.db"),
 		},
 		Events: EventsConfig{
-			MaxBuffer: 1000,
-		},
-		Webhooks: WebhooksConfig{
-			TimeoutSeconds: 10,
-			MaxRetries:     3,
+			MaxBuffer: 10000,
 		},
 	}
 }
 
-// Load reads config from path. If the file does not exist, it creates it with
-// defaults (including a freshly generated API key) and returns that config.
-func Load(path string) (Config, error) {
+// Load reads config from path. If the file doesn't exist, creates it with defaults.
+func Load(path string) (*Config, error) {
 	cfg := Defaults()
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		key, genErr := GenerateAPIKey()
-		if genErr != nil {
-			return cfg, genErr
+		if err := Save(path, &cfg); err != nil {
+			return nil, fmt.Errorf("creating default config: %w", err)
 		}
-		cfg.APIKey = key
-		if saveErr := Save(path, cfg); saveErr != nil {
-			return cfg, saveErr
-		}
-		return cfg, nil
+		return &cfg, nil
 	}
 	if err != nil {
-		return cfg, err
+		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, err
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
-	return cfg, nil
+	return &cfg, nil
 }
 
-// Save writes cfg to path in YAML format, creating parent directories as needed.
-func Save(path string, cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+// Save writes config to path, creating parent directories as needed.
+func Save(path string, cfg *Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	return os.WriteFile(path, data, 0600)
 }
 
-// GenerateAPIKey returns a cryptographically random 32-byte hex string.
-func GenerateAPIKey() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
+// GenerateAPIKey creates a random API key with the "wa_" prefix.
+func GenerateAPIKey() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return "wa_" + hex.EncodeToString(b)
 }
