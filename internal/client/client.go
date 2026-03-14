@@ -28,7 +28,7 @@ type Client struct {
 // New creates a new Client. dbPath is the SQLite database path for whatsmeow's
 // device store (separate from the app store to avoid driver conflicts).
 func New(appStore *appstore.Store, dbPath string, log waLog.Logger) (*Client, error) {
-	container, err := sqlstore.New(context.Background(), "sqlite", "file:"+dbPath+"?_pragma=foreign_keys(on)", log)
+	container, err := sqlstore.New(context.Background(), "sqlite", "file:"+dbPath+"?_pragma=foreign_keys(on)&_pragma=journal_mode(wal)&_pragma=busy_timeout(5000)", log)
 	if err != nil {
 		return nil, fmt.Errorf("creating whatsmeow container: %w", err)
 	}
