@@ -10,16 +10,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/piwi3910/whatsapp-go/internal/client"
 	"github.com/piwi3910/whatsapp-go/internal/store"
 	"github.com/piwi3910/whatsapp-go/internal/webhook"
+	"github.com/piwi3910/whatsapp-go/whatsapp"
 )
 
 // Server is the REST API server.
 type Server struct {
 	router     chi.Router
 	httpServer *http.Server
-	client     client.Service
+	client     whatsapp.Service
 	store      *store.Store
 	dispatcher *webhook.Dispatcher
 	apiKey     string
@@ -28,7 +28,7 @@ type Server struct {
 }
 
 // NewServer creates a new API server.
-func NewServer(svc client.Service, st *store.Store, disp *webhook.Dispatcher, apiKey, version string, maxUploadSize int64) *Server {
+func NewServer(svc whatsapp.Service, st *store.Store, disp *webhook.Dispatcher, apiKey, version string, maxUploadSize int64) *Server {
 	s := &Server{
 		client:     svc,
 		store:      st,

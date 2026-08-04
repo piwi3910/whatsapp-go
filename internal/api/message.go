@@ -62,46 +62,46 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Type {
 	case "text":
-		resp, err = s.client.SendText(req.To, req.Content)
+		resp, err = s.client.SendText(r.Context(), req.To, req.Content)
 	case "image":
 		data, fname, mediaErr := s.getMediaData(r, &req)
 		if mediaErr != nil {
 			writeError(w, http.StatusBadRequest, "MEDIA_ERROR", mediaErr.Error())
 			return
 		}
-		resp, err = s.client.SendImage(req.To, data, fname, req.Caption)
+		resp, err = s.client.SendImage(r.Context(), req.To, data, fname, req.Caption)
 	case "video":
 		data, fname, mediaErr := s.getMediaData(r, &req)
 		if mediaErr != nil {
 			writeError(w, http.StatusBadRequest, "MEDIA_ERROR", mediaErr.Error())
 			return
 		}
-		resp, err = s.client.SendVideo(req.To, data, fname, req.Caption)
+		resp, err = s.client.SendVideo(r.Context(), req.To, data, fname, req.Caption)
 	case "audio":
 		data, fname, mediaErr := s.getMediaData(r, &req)
 		if mediaErr != nil {
 			writeError(w, http.StatusBadRequest, "MEDIA_ERROR", mediaErr.Error())
 			return
 		}
-		resp, err = s.client.SendAudio(req.To, data, fname)
+		resp, err = s.client.SendAudio(r.Context(), req.To, data, fname)
 	case "document":
 		data, fname, mediaErr := s.getMediaData(r, &req)
 		if mediaErr != nil {
 			writeError(w, http.StatusBadRequest, "MEDIA_ERROR", mediaErr.Error())
 			return
 		}
-		resp, err = s.client.SendDocument(req.To, data, fname)
+		resp, err = s.client.SendDocument(r.Context(), req.To, data, fname)
 	case "sticker":
 		data, _, mediaErr := s.getMediaData(r, &req)
 		if mediaErr != nil {
 			writeError(w, http.StatusBadRequest, "MEDIA_ERROR", mediaErr.Error())
 			return
 		}
-		resp, err = s.client.SendSticker(req.To, data)
+		resp, err = s.client.SendSticker(r.Context(), req.To, data)
 	case "location":
-		resp, err = s.client.SendLocation(req.To, req.Lat, req.Lon, req.Name)
+		resp, err = s.client.SendLocation(r.Context(), req.To, req.Lat, req.Lon, req.Name)
 	case "contact":
-		resp, err = s.client.SendContact(req.To, req.ContactJID)
+		resp, err = s.client.SendContact(r.Context(), req.To, req.ContactJID)
 	default:
 		writeError(w, http.StatusBadRequest, "INVALID_TYPE", "unsupported message type: "+req.Type)
 		return
@@ -170,7 +170,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	msgs, err := s.client.GetMessages(jid, limit, before)
+	msgs, err := s.client.GetMessages(r.Context(), jid, limit, before)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
@@ -189,7 +189,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	msg, err := s.client.GetMessage(id)
+	msg, err := s.client.GetMessage(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
@@ -201,7 +201,7 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	forEveryone := r.URL.Query().Get("for_everyone") == "true"
 
-	if err := s.client.DeleteMessage(id, forEveryone); err != nil {
+	if err := s.client.DeleteMessage(r.Context(), id, forEveryone); err != nil {
 		writeError(w, http.StatusInternalServerError, "DELETE_ERROR", err.Error())
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Server) handleReactMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.client.SendReaction(id, body.Emoji); err != nil {
+	if err := s.client.SendReaction(r.Context(), id, body.Emoji); err != nil {
 		writeError(w, http.StatusInternalServerError, "REACTION_ERROR", err.Error())
 		return
 	}
@@ -227,7 +227,7 @@ func (s *Server) handleReactMessage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := s.client.MarkRead(id); err != nil {
+	if err := s.client.MarkRead(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "READ_ERROR", err.Error())
 		return
 	}

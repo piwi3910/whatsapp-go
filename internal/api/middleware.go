@@ -1,8 +1,10 @@
 package api
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -10,13 +12,23 @@ import (
 func apiKeyAuth(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// An empty configured key would otherwise accept any token:
+			// refuse every request instead of silently running open.
+			if apiKey == "" {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "server has no API key configured")
+				return
+			}
 			auth := r.Header.Get("Authorization")
-			if auth == "" || len(auth) < 8 || auth[:7] != "Bearer " {
+			const prefix = "Bearer "
+			if !strings.HasPrefix(auth, prefix) {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid Authorization header")
 				return
 			}
-			token := auth[7:]
-			if token != apiKey {
+			token := auth[len(prefix):]
+			// Constant-time: a plain != leaks the length of the matching
+			// prefix through timing, which over many requests recovers a
+			// long-lived key byte by byte.
+			if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid API key")
 				return
 			}

@@ -18,10 +18,10 @@ var contactListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		contacts, err := c.GetContacts()
+		contacts, err := c.GetContacts(cmd.Context())
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -46,10 +46,10 @@ var contactInfoCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		contact, err := c.GetContactInfo(args[0])
+		contact, err := c.GetContactInfo(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
@@ -64,10 +64,10 @@ var contactBlockCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		if err := c.BlockContact(args[0]); err != nil {
+		if err := c.BlockContact(cmd.Context(), args[0]); err != nil {
 			exitError(err.Error(), 1)
 		}
 		fmt.Println("Contact blocked.")
@@ -81,10 +81,10 @@ var contactUnblockCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		if err := c.UnblockContact(args[0]); err != nil {
+		if err := c.UnblockContact(cmd.Context(), args[0]); err != nil {
 			exitError(err.Error(), 1)
 		}
 		fmt.Println("Contact unblocked.")

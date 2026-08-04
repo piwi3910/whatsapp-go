@@ -1,6 +1,6 @@
-# wa — WhatsApp CLI & API Tool
+# whatsapp-go — WhatsApp library, CLI & API
 
-A command-line tool and REST API server for WhatsApp. Send and receive messages, manage groups, handle media, and more — all through a single Go binary.
+A **Go library** for WhatsApp, plus a command-line tool and REST API server built on it. Send and receive messages, manage groups, handle media — embed it in your own program, or run the `wa` binary.
 
 Built on [whatsmeow](https://github.com/tulir/whatsmeow) (WhatsApp multi-device protocol). No CGo required.
 
@@ -110,6 +110,69 @@ wa event listen [--types message.received,group.created]  # Stream NDJSON
 --config <path>  Override config file location
 --db <path>      Override database file location
 ```
+
+## Use as a Go library
+
+```bash
+go get github.com/piwi3910/whatsapp-go
+```
+
+```go
+import "github.com/piwi3910/whatsapp-go/whatsapp"
+
+c, err := whatsapp.Open(whatsapp.Options{StateDir: "/var/lib/wa"})
+if err != nil {
+    return err
+}
+defer c.Close()
+
+// First run only: pair by scanning the QR code.
+if !c.IsLoggedIn() {
+    qr, err := c.Login(ctx)
+    if err != nil {
+        return err
+    }
+    for evt := range qr {
+        if evt.Done {
+            break
+        }
+        fmt.Println("scan this:", evt.Code)
+    }
+}
+
+c.OnEvent(func(e whatsapp.Event) {
+    if e.Type == whatsapp.EventMessageReceived {
+        log.Println("inbound:", e.Payload)
+    }
+})
+
+if err := c.Connect(ctx); err != nil {
+    return err
+}
+_, err = c.SendText(ctx, "+31612345678", "hello from Go")
+```
+
+Everything the CLI and REST server can do is available on the `*whatsapp.Client`, and the `whatsapp.Service` interface makes it easy to fake in your own tests. Every operation that performs I/O takes a `context.Context` first, so calls can be cancelled and deadlined.
+
+Types you need (`Message`, `Event`, `Contact`, `Group`, `SendResponse`) are exported from the same package — one import, nothing internal leaks.
+
+### Receiving messages
+
+Two options:
+
+| | `OnEvent` | `Events` |
+|---|---|---|
+| delivery | push, in-process | pull, cursor-based |
+| survives restart | no | yes |
+| use when | you react live and can afford to miss events while down | you must not miss messages across your own downtime |
+
+`Events(ctx, after, limit)` returns log entries with ID greater than `after`. Persist the last ID you handled and resume from it. **Delivery is at-least-once** — the same WhatsApp message can reappear after a reconnect or history sync, so deduplicate on the message ID in the payload.
+
+### State and lifetime
+
+A `Client` owns two SQLite databases under `Options.StateDir`: the whatsmeow device store (the pairing — deleting it forces a new QR scan) and the message/event store. Because that state is local files, **one process per linked account**: a `Client` is single-instance by nature and cannot be horizontally scaled.
+
+Runnable examples: [`whatsapp/example_test.go`](whatsapp/example_test.go).
 
 ## REST API
 
@@ -233,19 +296,41 @@ database:
 events:
   max_buffer: 10000             # Max events in polling buffer
 webhooks: []                    # Pre-configured webhooks
+allow_private_webhook_targets: false
 ```
+
+### Webhook targets and SSRF
+
+Webhook URLs are supplied by API callers and the server POSTs to them
+unattended, so by default it refuses targets that resolve to **loopback or
+private** addresses — otherwise anyone able to register a webhook could aim
+the server at services on its own network. Addresses that reach
+infrastructure rather than applications (**link-local**, including the
+`169.254.169.254` cloud metadata endpoint, plus multicast and the
+unspecified address) are refused **always**, whatever the setting.
+
+Every target is checked twice: once at registration, for a clear error, and
+again at the moment of the TCP dial, which is what actually closes the hole
+— a hostname can pass registration and resolve somewhere else afterwards.
+Redirects are never followed, since following one re-opens the hole a hop
+later.
+
+If your receiver is deliberately on a private network — an agent platform
+in the same Kubernetes cluster, a service on your LAN — set
+`allow_private_webhook_targets: true`. Only do this when you trust everyone
+who can call the API.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────┐
-│                   wa binary                   │
-├───────────────────┬──────────────────────────┤
-│   CLI (cobra)     │   REST API (chi)          │
-│   cmd/wa/*.go     │   internal/api/           │
-├───────────────────┴──────────────────────────┤
-│            internal/client/ (Service)         │
-│          (core WhatsApp operations)           │
+│         your program │      wa binary          │
+├──────────────────────┼───────────┬────────────┤
+│  imports whatsapp/   │ CLI(cobra)│ REST(chi)  │
+│                      │ cmd/wa/   │ internal/  │
+├──────────────────────┴───────────┴────────────┤
+│         whatsapp/ (public Go library)         │
+│     Client + Service — core operations        │
 ├──────────────────────────────────────────────┤
 │             internal/store/ (SQLite)          │
 │      messages + events + webhooks + media     │

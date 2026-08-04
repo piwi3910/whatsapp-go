@@ -23,7 +23,7 @@ func TestDispatch_MatchingEvent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := New()
+	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
 	d.Register(models.Webhook{
 		ID:     "wh1",
 		URL:    srv.URL,
@@ -53,56 +53,75 @@ func TestDispatch_MatchingEvent(t *testing.T) {
 }
 
 func TestDispatch_WildcardSubscription(t *testing.T) {
-	called := false
+	// Delivery is asynchronous, so hand the result back over a channel
+	// rather than reading a plain bool the delivery goroutine writes —
+	// that pattern is a data race, and a sleep only hides it.
+	called := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
+		select {
+		case called <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
 
-	d := New()
+	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
 	d.Register(models.Webhook{ID: "wh1", URL: srv.URL, Events: []string{"*"}})
 
 	d.Dispatch(models.Event{
 		Type: "group.created", Payload: "{}", Timestamp: time.Now().Unix(),
 	})
 
-	time.Sleep(100 * time.Millisecond)
-	if !called {
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
 		t.Error("wildcard webhook was not called")
 	}
 }
 
 func TestDispatch_NonMatchingEvent(t *testing.T) {
+	// Asserting a negative: the flag is still written from the delivery
+	// goroutine, so guard it rather than racing on a bare bool.
+	var mu sync.Mutex
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		called = true
+		mu.Unlock()
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
 
-	d := New()
+	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
 	d.Register(models.Webhook{ID: "wh1", URL: srv.URL, Events: []string{"message.sent"}})
 
 	d.Dispatch(models.Event{
 		Type: "message.received", Payload: "{}", Timestamp: time.Now().Unix(),
 	})
 
+	// A short wait is legitimate here: there is no signal to wait for, and
+	// the point is that nothing arrives.
 	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
 	if called {
 		t.Error("webhook should not have been called for non-matching event")
 	}
 }
 
 func TestDispatch_HMACSignature(t *testing.T) {
-	var sigHeader string
+	sigCh := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sigHeader = r.Header.Get("X-Wa-Signature")
+		select {
+		case sigCh <- r.Header.Get("X-Wa-Signature"):
+		default:
+		}
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
 
-	d := New()
+	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
 	d.Register(models.Webhook{
 		ID: "wh1", URL: srv.URL, Events: []string{"*"}, Secret: "mysecret",
 	})
@@ -111,7 +130,12 @@ func TestDispatch_HMACSignature(t *testing.T) {
 		Type: "test", Payload: "{}", Timestamp: time.Now().Unix(),
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	var sigHeader string
+	select {
+	case sigHeader = <-sigCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook was not delivered")
+	}
 	if sigHeader == "" {
 		t.Error("HMAC signature header missing")
 	}
@@ -121,7 +145,7 @@ func TestDispatch_HMACSignature(t *testing.T) {
 }
 
 func TestUnregister(t *testing.T) {
-	d := New()
+	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
 	d.Register(models.Webhook{ID: "wh1", URL: "http://example.com", Events: []string{"*"}})
 	d.Unregister("wh1")
 

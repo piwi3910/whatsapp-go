@@ -22,11 +22,11 @@ var mediaDownloadCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
-		data, mimeType, err := c.DownloadMedia(args[0])
+		data, mimeType, err := c.DownloadMedia(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 1)
 		}

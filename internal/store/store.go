@@ -17,10 +17,21 @@ func New(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, fmt.Errorf("creating db directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)")
+	// busy_timeout is essential, not tuning: WAL allows a single writer, and
+	// writes arrive from two directions at once — the whatsmeow event
+	// goroutine persisting inbound messages, and HTTP/library callers. With
+	// no busy timeout SQLite returns SQLITE_BUSY immediately on that overlap,
+	// which previously surfaced as silently dropped inbound messages.
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+	// One connection: database/sql would otherwise open several, and
+	// concurrent writers on one SQLite file contend even with WAL. Serializing
+	// here costs little (writes are small and local) and removes the whole
+	// class of SQLITE_BUSY failures. Note busy_timeout still matters — the
+	// whatsmeow device store is a separate connection to a separate file.
+	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)

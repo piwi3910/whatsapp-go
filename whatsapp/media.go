@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // DownloadMedia downloads media from a message. Returns the raw bytes, MIME type, and any error.
 // Reconstructs the protobuf message from raw_proto stored in DB, then uses
 // whatsmeow's Download which handles decryption and hash verification.
-func (c *Client) DownloadMedia(messageID string) ([]byte, string, error) {
+func (c *Client) DownloadMedia(ctx context.Context, messageID string) ([]byte, string, error) {
 	msg, err := c.store.GetMessage(messageID)
 	if err != nil {
 		return nil, "", fmt.Errorf("message not found: %w", err)
@@ -35,7 +35,7 @@ func (c *Client) DownloadMedia(messageID string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("message %q has no downloadable media", messageID)
 	}
 
-	data, err := c.wac.Download(context.Background(), downloadable)
+	data, err := c.wac.Download(ctx, downloadable)
 	if err != nil {
 		return nil, "", fmt.Errorf("downloading media: %w", err)
 	}

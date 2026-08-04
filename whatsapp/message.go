@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func (c *Client) parseJID(input string) (types.JID, error) {
 }
 
 // SendText sends a text message and stores it locally.
-func (c *Client) SendText(jidStr, text string) (*models.SendResponse, error) {
+func (c *Client) SendText(ctx context.Context, jidStr, text string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func (c *Client) SendText(jidStr, text string) (*models.SendResponse, error) {
 		Conversation: proto.String(text),
 	}
 
-	resp, err := c.wac.SendMessage(context.Background(), to, msg)
+	resp, err := c.wac.SendMessage(ctx, to, msg)
 	if err != nil {
 		return nil, fmt.Errorf("sending text: %w", err)
 	}
@@ -57,13 +57,13 @@ func (c *Client) SendText(jidStr, text string) (*models.SendResponse, error) {
 }
 
 // SendImage sends an image message.
-func (c *Client) SendImage(jidStr string, data []byte, filename, caption string) (*models.SendResponse, error) {
+func (c *Client) SendImage(ctx context.Context, jidStr string, data []byte, filename, caption string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
-	uploaded, err := c.wac.Upload(context.Background(), data, whatsmeow.MediaImage)
+	uploaded, err := c.wac.Upload(ctx, data, whatsmeow.MediaImage)
 	if err != nil {
 		return nil, fmt.Errorf("uploading image: %w", err)
 	}
@@ -81,17 +81,17 @@ func (c *Client) SendImage(jidStr string, data []byte, filename, caption string)
 		},
 	}
 
-	return c.sendAndStore(to, msg, "image", caption, data)
+	return c.sendAndStore(ctx, to, msg, "image", caption, data)
 }
 
 // SendVideo sends a video message.
-func (c *Client) SendVideo(jidStr string, data []byte, filename, caption string) (*models.SendResponse, error) {
+func (c *Client) SendVideo(ctx context.Context, jidStr string, data []byte, filename, caption string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
-	uploaded, err := c.wac.Upload(context.Background(), data, whatsmeow.MediaVideo)
+	uploaded, err := c.wac.Upload(ctx, data, whatsmeow.MediaVideo)
 	if err != nil {
 		return nil, fmt.Errorf("uploading video: %w", err)
 	}
@@ -109,17 +109,17 @@ func (c *Client) SendVideo(jidStr string, data []byte, filename, caption string)
 		},
 	}
 
-	return c.sendAndStore(to, msg, "video", caption, data)
+	return c.sendAndStore(ctx, to, msg, "video", caption, data)
 }
 
 // SendAudio sends an audio message.
-func (c *Client) SendAudio(jidStr string, data []byte, filename string) (*models.SendResponse, error) {
+func (c *Client) SendAudio(ctx context.Context, jidStr string, data []byte, filename string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
-	uploaded, err := c.wac.Upload(context.Background(), data, whatsmeow.MediaAudio)
+	uploaded, err := c.wac.Upload(ctx, data, whatsmeow.MediaAudio)
 	if err != nil {
 		return nil, fmt.Errorf("uploading audio: %w", err)
 	}
@@ -136,17 +136,17 @@ func (c *Client) SendAudio(jidStr string, data []byte, filename string) (*models
 		},
 	}
 
-	return c.sendAndStore(to, msg, "audio", "", data)
+	return c.sendAndStore(ctx, to, msg, "audio", "", data)
 }
 
 // SendDocument sends a document message.
-func (c *Client) SendDocument(jidStr string, data []byte, filename string) (*models.SendResponse, error) {
+func (c *Client) SendDocument(ctx context.Context, jidStr string, data []byte, filename string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
-	uploaded, err := c.wac.Upload(context.Background(), data, whatsmeow.MediaDocument)
+	uploaded, err := c.wac.Upload(ctx, data, whatsmeow.MediaDocument)
 	if err != nil {
 		return nil, fmt.Errorf("uploading document: %w", err)
 	}
@@ -164,17 +164,17 @@ func (c *Client) SendDocument(jidStr string, data []byte, filename string) (*mod
 		},
 	}
 
-	return c.sendAndStore(to, msg, "document", "", data)
+	return c.sendAndStore(ctx, to, msg, "document", "", data)
 }
 
 // SendSticker sends a sticker message.
-func (c *Client) SendSticker(jidStr string, data []byte) (*models.SendResponse, error) {
+func (c *Client) SendSticker(ctx context.Context, jidStr string, data []byte) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
-	uploaded, err := c.wac.Upload(context.Background(), data, whatsmeow.MediaImage)
+	uploaded, err := c.wac.Upload(ctx, data, whatsmeow.MediaImage)
 	if err != nil {
 		return nil, fmt.Errorf("uploading sticker: %w", err)
 	}
@@ -191,11 +191,11 @@ func (c *Client) SendSticker(jidStr string, data []byte) (*models.SendResponse, 
 		},
 	}
 
-	return c.sendAndStore(to, msg, "sticker", "", data)
+	return c.sendAndStore(ctx, to, msg, "sticker", "", data)
 }
 
 // SendLocation sends a location message.
-func (c *Client) SendLocation(jidStr string, lat, lon float64, name string) (*models.SendResponse, error) {
+func (c *Client) SendLocation(ctx context.Context, jidStr string, lat, lon float64, name string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
@@ -209,11 +209,11 @@ func (c *Client) SendLocation(jidStr string, lat, lon float64, name string) (*mo
 		},
 	}
 
-	return c.sendAndStore(to, msg, "location", "", nil)
+	return c.sendAndStore(ctx, to, msg, "location", "", nil)
 }
 
 // SendContact sends a contact card message.
-func (c *Client) SendContact(jidStr, contactJIDStr string) (*models.SendResponse, error) {
+func (c *Client) SendContact(ctx context.Context, jidStr, contactJIDStr string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
@@ -229,12 +229,12 @@ func (c *Client) SendContact(jidStr, contactJIDStr string) (*models.SendResponse
 		},
 	}
 
-	return c.sendAndStore(to, msg, "contact", "", nil)
+	return c.sendAndStore(ctx, to, msg, "contact", "", nil)
 }
 
 // SendReaction reacts to a message. Looks up the message in the local store
 // to get the full key tuple needed by whatsmeow.
-func (c *Client) SendReaction(messageID, emoji string) error {
+func (c *Client) SendReaction(ctx context.Context, messageID, emoji string) error {
 	msg, err := c.store.GetMessage(messageID)
 	if err != nil {
 		return fmt.Errorf("message not found: %w", err)
@@ -244,12 +244,12 @@ func (c *Client) SendReaction(messageID, emoji string) error {
 	senderJID, _ := types.ParseJID(msg.SenderJID)
 
 	reaction := c.wac.BuildReaction(chatJID, senderJID, msg.WaID, emoji)
-	_, err = c.wac.SendMessage(context.Background(), chatJID, reaction)
+	_, err = c.wac.SendMessage(ctx, chatJID, reaction)
 	return err
 }
 
 // DeleteMessage revokes a message.
-func (c *Client) DeleteMessage(messageID string, forEveryone bool) error {
+func (c *Client) DeleteMessage(ctx context.Context, messageID string, forEveryone bool) error {
 	msg, err := c.store.GetMessage(messageID)
 	if err != nil {
 		return fmt.Errorf("message not found: %w", err)
@@ -260,7 +260,7 @@ func (c *Client) DeleteMessage(messageID string, forEveryone bool) error {
 
 	if forEveryone {
 		revoke := c.wac.BuildRevoke(chatJID, senderJID, msg.WaID)
-		_, err = c.wac.SendMessage(context.Background(), chatJID, revoke)
+		_, err = c.wac.SendMessage(ctx, chatJID, revoke)
 		if err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func (c *Client) DeleteMessage(messageID string, forEveryone bool) error {
 }
 
 // MarkRead marks a message as read in both WhatsApp and local store.
-func (c *Client) MarkRead(messageID string) error {
+func (c *Client) MarkRead(ctx context.Context, messageID string) error {
 	msg, err := c.store.GetMessage(messageID)
 	if err != nil {
 		return fmt.Errorf("message not found: %w", err)
@@ -280,7 +280,7 @@ func (c *Client) MarkRead(messageID string) error {
 	senderJID, _ := types.ParseJID(msg.SenderJID)
 
 	err = c.wac.MarkRead(
-		context.Background(),
+		ctx,
 		[]types.MessageID{msg.WaID},
 		time.Now(),
 		chatJID,
@@ -293,19 +293,21 @@ func (c *Client) MarkRead(messageID string) error {
 	return c.store.UpdateReadStatus(messageID, true)
 }
 
-// GetMessages retrieves messages from the local store.
-func (c *Client) GetMessages(chatJID string, limit int, before int64) ([]models.Message, error) {
+// GetMessages retrieves messages from the local store. ctx is accepted for
+// interface symmetry; the local store does not take one.
+func (c *Client) GetMessages(_ context.Context, chatJID string, limit int, before int64) ([]models.Message, error) {
 	return c.store.GetMessages(chatJID, limit, before)
 }
 
-// GetMessage retrieves a single message from the local store.
-func (c *Client) GetMessage(messageID string) (*models.Message, error) {
+// GetMessage retrieves a single message from the local store. ctx is accepted
+// for interface symmetry; the local store does not take one.
+func (c *Client) GetMessage(_ context.Context, messageID string) (*models.Message, error) {
 	return c.store.GetMessage(messageID)
 }
 
 // sendAndStore is a helper that sends a message and stores it locally.
-func (c *Client) sendAndStore(to types.JID, msg *waE2E.Message, msgType, caption string, mediaData []byte) (*models.SendResponse, error) {
-	resp, err := c.wac.SendMessage(context.Background(), to, msg)
+func (c *Client) sendAndStore(ctx context.Context, to types.JID, msg *waE2E.Message, msgType, caption string, mediaData []byte) (*models.SendResponse, error) {
+	resp, err := c.wac.SendMessage(ctx, to, msg)
 	if err != nil {
 		return nil, fmt.Errorf("sending %s: %w", msgType, err)
 	}

@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 // CreateGroup creates a new WhatsApp group.
-func (c *Client) CreateGroup(name string, participants []string) (*models.Group, error) {
+func (c *Client) CreateGroup(ctx context.Context, name string, participants []string) (*models.Group, error) {
 	jids := make([]types.JID, len(participants))
 	for i, p := range participants {
 		j, err := c.parseJID(p)
@@ -26,7 +26,7 @@ func (c *Client) CreateGroup(name string, participants []string) (*models.Group,
 		Name:         name,
 		Participants: jids,
 	}
-	info, err := c.wac.CreateGroup(context.Background(), req)
+	info, err := c.wac.CreateGroup(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("creating group: %w", err)
 	}
@@ -35,8 +35,8 @@ func (c *Client) CreateGroup(name string, participants []string) (*models.Group,
 }
 
 // GetGroups returns all joined groups.
-func (c *Client) GetGroups() ([]models.Group, error) {
-	groups, err := c.wac.GetJoinedGroups(context.Background())
+func (c *Client) GetGroups(ctx context.Context) ([]models.Group, error) {
+	groups, err := c.wac.GetJoinedGroups(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting groups: %w", err)
 	}
@@ -49,12 +49,12 @@ func (c *Client) GetGroups() ([]models.Group, error) {
 }
 
 // GetGroupInfo returns info about a specific group.
-func (c *Client) GetGroupInfo(groupJID string) (*models.Group, error) {
+func (c *Client) GetGroupInfo(ctx context.Context, groupJID string) (*models.Group, error) {
 	j, err := c.parseJID(groupJID)
 	if err != nil {
 		return nil, err
 	}
-	info, err := c.wac.GetGroupInfo(context.Background(), j)
+	info, err := c.wac.GetGroupInfo(ctx, j)
 	if err != nil {
 		return nil, fmt.Errorf("getting group info: %w", err)
 	}
@@ -62,7 +62,7 @@ func (c *Client) GetGroupInfo(groupJID string) (*models.Group, error) {
 }
 
 // JoinGroup joins a group via invite link. Returns the group JID.
-func (c *Client) JoinGroup(inviteLink string) (string, error) {
+func (c *Client) JoinGroup(ctx context.Context, inviteLink string) (string, error) {
 	// Extract code from link (format: https://chat.whatsapp.com/CODE)
 	code := inviteLink
 	if strings.HasPrefix(code, "https://chat.whatsapp.com/") {
@@ -71,7 +71,7 @@ func (c *Client) JoinGroup(inviteLink string) (string, error) {
 		code = strings.TrimPrefix(code, "http://chat.whatsapp.com/")
 	}
 
-	groupJID, err := c.wac.JoinGroupWithLink(context.Background(), code)
+	groupJID, err := c.wac.JoinGroupWithLink(ctx, code)
 	if err != nil {
 		return "", fmt.Errorf("joining group: %w", err)
 	}
@@ -79,21 +79,21 @@ func (c *Client) JoinGroup(inviteLink string) (string, error) {
 }
 
 // LeaveGroup leaves a group.
-func (c *Client) LeaveGroup(groupJID string) error {
+func (c *Client) LeaveGroup(ctx context.Context, groupJID string) error {
 	j, err := c.parseJID(groupJID)
 	if err != nil {
 		return err
 	}
-	return c.wac.LeaveGroup(context.Background(), j)
+	return c.wac.LeaveGroup(ctx, j)
 }
 
 // GetInviteLink returns the group invite link.
-func (c *Client) GetInviteLink(groupJID string) (string, error) {
+func (c *Client) GetInviteLink(ctx context.Context, groupJID string) (string, error) {
 	j, err := c.parseJID(groupJID)
 	if err != nil {
 		return "", err
 	}
-	link, err := c.wac.GetGroupInviteLink(context.Background(), j, false)
+	link, err := c.wac.GetGroupInviteLink(ctx, j, false)
 	if err != nil {
 		return "", fmt.Errorf("getting invite link: %w", err)
 	}
@@ -101,26 +101,26 @@ func (c *Client) GetInviteLink(groupJID string) (string, error) {
 }
 
 // AddParticipants adds participants to a group.
-func (c *Client) AddParticipants(groupJID string, participants []string) error {
-	return c.updateParticipants(groupJID, participants, whatsmeow.ParticipantChangeAdd)
+func (c *Client) AddParticipants(ctx context.Context, groupJID string, participants []string) error {
+	return c.updateParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangeAdd)
 }
 
 // RemoveParticipants removes participants from a group.
-func (c *Client) RemoveParticipants(groupJID string, participants []string) error {
-	return c.updateParticipants(groupJID, participants, whatsmeow.ParticipantChangeRemove)
+func (c *Client) RemoveParticipants(ctx context.Context, groupJID string, participants []string) error {
+	return c.updateParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangeRemove)
 }
 
 // PromoteParticipants makes participants group admins.
-func (c *Client) PromoteParticipants(groupJID string, participants []string) error {
-	return c.updateParticipants(groupJID, participants, whatsmeow.ParticipantChangePromote)
+func (c *Client) PromoteParticipants(ctx context.Context, groupJID string, participants []string) error {
+	return c.updateParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangePromote)
 }
 
 // DemoteParticipants removes admin status from participants.
-func (c *Client) DemoteParticipants(groupJID string, participants []string) error {
-	return c.updateParticipants(groupJID, participants, whatsmeow.ParticipantChangeDemote)
+func (c *Client) DemoteParticipants(ctx context.Context, groupJID string, participants []string) error {
+	return c.updateParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangeDemote)
 }
 
-func (c *Client) updateParticipants(groupJID string, participants []string, action whatsmeow.ParticipantChange) error {
+func (c *Client) updateParticipants(ctx context.Context, groupJID string, participants []string, action whatsmeow.ParticipantChange) error {
 	gJID, err := c.parseJID(groupJID)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (c *Client) updateParticipants(groupJID string, participants []string, acti
 		jids[i] = j
 	}
 
-	_, err = c.wac.UpdateGroupParticipants(context.Background(), gJID, jids, action)
+	_, err = c.wac.UpdateGroupParticipants(ctx, gJID, jids, action)
 	return err
 }
 

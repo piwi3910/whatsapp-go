@@ -14,12 +14,12 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/piwi3910/whatsapp-go/internal/api"
-	"github.com/piwi3910/whatsapp-go/internal/client"
 	"github.com/piwi3910/whatsapp-go/internal/config"
 	"github.com/piwi3910/whatsapp-go/internal/models"
 	"github.com/piwi3910/whatsapp-go/internal/pidfile"
 	"github.com/piwi3910/whatsapp-go/internal/store"
 	"github.com/piwi3910/whatsapp-go/internal/webhook"
+	"github.com/piwi3910/whatsapp-go/whatsapp"
 )
 
 var servePort int
@@ -46,7 +46,9 @@ var serveCmd = &cobra.Command{
 		// Generate API key if not set
 		if cfg.APIKey == "" {
 			cfg.APIKey = config.GenerateAPIKey()
-			log.Printf("Generated API key: %s", cfg.APIKey)
+			// Never log the key itself: in a supervised deployment this line
+			// ships the credential to the log aggregator on every start.
+			log.Printf("Generated a new API key (fingerprint %s); it is stored in the config file", config.KeyFingerprint(cfg.APIKey))
 			if configPath != "" {
 				config.Save(configPath, cfg)
 			}
@@ -68,13 +70,13 @@ var serveCmd = &cobra.Command{
 		// Create client
 		waLogger := waLog.Stdout("wa", "WARN", true)
 		waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
-		c, err := client.New(s, waDBPath, waLogger)
+		c, err := whatsapp.New(s, waDBPath, waLogger)
 		if err != nil {
 			exitError(fmt.Sprintf("creating client: %v", err), 1)
 		}
 
 		// Setup webhook dispatcher
-		disp := webhook.New()
+		disp := webhook.NewWithPolicy(webhook.Policy{AllowPrivateTargets: cfg.AllowPrivateWebhookTargets})
 
 		webhooks, _ := s.GetWebhooks()
 		for _, wh := range webhooks {
@@ -96,7 +98,7 @@ var serveCmd = &cobra.Command{
 		c.SetupEventHandlers()
 
 		// Connect to WhatsApp (if previously logged in)
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			log.Printf("WhatsApp connection: %v (login may be needed)", err)
 		}
 
@@ -158,7 +160,7 @@ var serveCmd = &cobra.Command{
 			c.Disconnect()
 		}()
 
-		log.Printf("API key: %s", cfg.APIKey)
+		log.Printf("API key fingerprint: %s", config.KeyFingerprint(cfg.APIKey))
 		if err := srv.Start(cfg.Server.Host, cfg.Server.Port); err != nil {
 			log.Printf("Server stopped: %v", err)
 		}

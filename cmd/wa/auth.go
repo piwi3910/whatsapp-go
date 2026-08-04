@@ -11,16 +11,16 @@ import (
 	"github.com/spf13/cobra"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/piwi3910/whatsapp-go/internal/client"
 	"github.com/piwi3910/whatsapp-go/internal/config"
 	"github.com/piwi3910/whatsapp-go/internal/pidfile"
 	"github.com/piwi3910/whatsapp-go/internal/store"
+	"github.com/piwi3910/whatsapp-go/whatsapp"
 )
 
 // newClient creates a client for CLI use. If a server is running (detected via
 // PID file), returns a proxy client that forwards through the REST API.
 // Otherwise creates a direct whatsmeow connection.
-func newClient() (client.Service, *store.Store, func()) {
+func newClient() (whatsapp.Service, *store.Store, func()) {
 	pidPath := filepath.Join(config.Dir(), "wa.pid")
 	serverAddr := pidfile.ServerAddress(pidPath, cfg.Server.Host, cfg.Server.Port)
 
@@ -38,7 +38,7 @@ func newClient() (client.Service, *store.Store, func()) {
 
 	waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
 	log := waLog.Stdout("wa", "WARN", true)
-	c, err := client.New(s, waDBPath, log)
+	c, err := whatsapp.New(s, waDBPath, log)
 	if err != nil {
 		s.Close()
 		exitError(fmt.Sprintf("creating client: %v", err), 1)
@@ -65,12 +65,12 @@ var loginCmd = &cobra.Command{
 
 		waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
 		log := waLog.Stdout("wa", "WARN", true)
-		c, err := client.New(s, waDBPath, log)
+		c, err := whatsapp.New(s, waDBPath, log)
 		if err != nil {
 			exitError(fmt.Sprintf("creating client: %v", err), 1)
 		}
 
-		qrChan, err := c.Login()
+		qrChan, err := c.Login(cmd.Context())
 		if err != nil {
 			exitError(err.Error(), 2)
 		}
@@ -104,11 +104,11 @@ var logoutCmd = &cobra.Command{
 		c, _, cleanup := newClient()
 		defer cleanup()
 
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 2)
 		}
 
-		if err := c.Logout(); err != nil {
+		if err := c.Logout(cmd.Context()); err != nil {
 			exitError(err.Error(), 2)
 		}
 		fmt.Println("Logged out successfully.")

@@ -65,7 +65,7 @@ func (s *Server) handleUploadMedia(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDownloadMedia(w http.ResponseWriter, r *http.Request) {
 	messageID := chi.URLParam(r, "messageId")
-	data, mimeType, err := s.client.DownloadMedia(messageID)
+	data, mimeType, err := s.client.DownloadMedia(r.Context(), messageID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
