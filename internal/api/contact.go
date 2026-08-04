@@ -7,7 +7,7 @@ import (
 )
 
 func (s *Server) handleListContacts(w http.ResponseWriter, r *http.Request) {
-	contacts, err := s.client.GetContacts()
+	contacts, err := s.client.GetContacts(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
@@ -17,7 +17,7 @@ func (s *Server) handleListContacts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetContact(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	contact, err := s.client.GetContactInfo(jid)
+	contact, err := s.client.GetContactInfo(r.Context(), jid)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
@@ -27,7 +27,7 @@ func (s *Server) handleGetContact(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBlockContact(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	if err := s.client.BlockContact(jid); err != nil {
+	if err := s.client.BlockContact(r.Context(), jid); err != nil {
 		writeError(w, http.StatusInternalServerError, "BLOCK_ERROR", err.Error())
 		return
 	}
@@ -36,7 +36,7 @@ func (s *Server) handleBlockContact(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUnblockContact(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	if err := s.client.UnblockContact(jid); err != nil {
+	if err := s.client.UnblockContact(r.Context(), jid); err != nil {
 		writeError(w, http.StatusInternalServerError, "UNBLOCK_ERROR", err.Error())
 		return
 	}

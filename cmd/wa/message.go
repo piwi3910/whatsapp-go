@@ -31,7 +31,7 @@ var messageListCmd = &cobra.Command{
 			before, _ = strconv.ParseInt(msgBefore, 10, 64)
 		}
 
-		msgs, err := c.GetMessages(args[0], msgLimit, before)
+		msgs, err := c.GetMessages(cmd.Context(), args[0], msgLimit, before)
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -59,7 +59,7 @@ var messageInfoCmd = &cobra.Command{
 		c, _, cleanup := newClient()
 		defer cleanup()
 
-		msg, err := c.GetMessage(args[0])
+		msg, err := c.GetMessage(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
@@ -74,11 +74,11 @@ var messageDeleteCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
-		if err := c.DeleteMessage(args[1], msgForEveryone); err != nil {
+		if err := c.DeleteMessage(cmd.Context(), args[1], msgForEveryone); err != nil {
 			exitError(err.Error(), 1)
 		}
 		fmt.Println("Message deleted.")

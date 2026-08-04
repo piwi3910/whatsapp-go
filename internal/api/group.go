@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -16,7 +17,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_BODY", err.Error())
 		return
 	}
-	group, err := s.client.CreateGroup(body.Name, body.Participants)
+	group, err := s.client.CreateGroup(r.Context(), body.Name, body.Participants)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "CREATE_ERROR", err.Error())
 		return
@@ -25,7 +26,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.client.GetGroups()
+	groups, err := s.client.GetGroups(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "QUERY_ERROR", err.Error())
 		return
@@ -35,7 +36,7 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	group, err := s.client.GetGroupInfo(jid)
+	group, err := s.client.GetGroupInfo(r.Context(), jid)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
@@ -45,7 +46,7 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	if err := s.client.LeaveGroup(jid); err != nil {
+	if err := s.client.LeaveGroup(r.Context(), jid); err != nil {
 		writeError(w, http.StatusInternalServerError, "LEAVE_ERROR", err.Error())
 		return
 	}
@@ -54,7 +55,7 @@ func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetInviteLink(w http.ResponseWriter, r *http.Request) {
 	jid := chi.URLParam(r, "jid")
-	link, err := s.client.GetInviteLink(jid)
+	link, err := s.client.GetInviteLink(r.Context(), jid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INVITE_ERROR", err.Error())
 		return
@@ -70,7 +71,7 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_BODY", err.Error())
 		return
 	}
-	groupJID, err := s.client.JoinGroup(body.InviteLink)
+	groupJID, err := s.client.JoinGroup(r.Context(), body.InviteLink)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "JOIN_ERROR", err.Error())
 		return
@@ -78,7 +79,7 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"group_jid": groupJID})
 }
 
-func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request, action func(string, []string) error) {
+func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request, action func(context.Context, string, []string) error) {
 	jid := chi.URLParam(r, "jid")
 	var body struct {
 		JIDs []string `json:"jids"`
@@ -87,7 +88,7 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request, acti
 		writeError(w, http.StatusBadRequest, "INVALID_BODY", err.Error())
 		return
 	}
-	if err := action(jid, body.JIDs); err != nil {
+	if err := action(r.Context(), jid, body.JIDs); err != nil {
 		writeError(w, http.StatusInternalServerError, "PARTICIPANT_ERROR", err.Error())
 		return
 	}

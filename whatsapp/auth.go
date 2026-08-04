@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"context"
@@ -9,12 +9,15 @@ import (
 // The caller should display QR codes from the channel until Done is true.
 // After Done, the caller should keep the client connected for a few seconds
 // to allow whatsmeow to complete key exchange and device storage.
-func (c *Client) Login() (<-chan QREvent, error) {
+//
+// ctx bounds the QR channel: when it is cancelled whatsmeow stops emitting
+// codes, so pass a context that lives at least as long as the pairing attempt.
+func (c *Client) Login(ctx context.Context) (<-chan QREvent, error) {
 	if c.wac.Store.ID != nil {
 		return nil, fmt.Errorf("already logged in")
 	}
 
-	qrChan, err := c.wac.GetQRChannel(context.Background())
+	qrChan, err := c.wac.GetQRChannel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting QR channel: %w", err)
 	}
@@ -45,8 +48,8 @@ func (c *Client) Login() (<-chan QREvent, error) {
 }
 
 // Logout unlinks the device and clears session data.
-func (c *Client) Logout() error {
-	if err := c.wac.Logout(context.Background()); err != nil {
+func (c *Client) Logout(ctx context.Context) error {
+	if err := c.wac.Logout(ctx); err != nil {
 		return fmt.Errorf("logout: %w", err)
 	}
 	return nil

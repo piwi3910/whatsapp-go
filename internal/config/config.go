@@ -12,10 +12,10 @@ import (
 
 // Config is the top-level configuration.
 type Config struct {
-	APIKey   string         `yaml:"api_key"`
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Events   EventsConfig   `yaml:"events"`
+	APIKey   string          `yaml:"api_key"`
+	Server   ServerConfig    `yaml:"server"`
+	Database DatabaseConfig  `yaml:"database"`
+	Events   EventsConfig    `yaml:"events"`
 	Webhooks []WebhookConfig `yaml:"webhooks"`
 }
 

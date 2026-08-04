@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"time"
@@ -18,7 +19,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	qrChan, err := s.client.Login()
+	// Pairing outlives this request: the caller scans the QR code well after the
+	// handler has returned, so the QR channel must not be bound to r.Context().
+	qrChan, err := s.client.Login(context.Background())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "LOGIN_ERROR", err.Error())
 		return
@@ -53,7 +56,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if err := s.client.Logout(); err != nil {
+	if err := s.client.Logout(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "LOGOUT_ERROR", err.Error())
 		return
 	}

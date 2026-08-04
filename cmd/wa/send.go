@@ -26,7 +26,7 @@ var sendTextCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
@@ -39,7 +39,7 @@ var sendTextCmd = &cobra.Command{
 			text = string(data)
 		}
 
-		resp, err := c.SendText(args[0], text)
+		resp, err := c.SendText(cmd.Context(), args[0], text)
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -55,7 +55,7 @@ func makeSendMediaCmd(use, short, msgType string, needsCaption bool) *cobra.Comm
 		Run: func(cmd *cobra.Command, args []string) {
 			c, _, cleanup := newClient()
 			defer cleanup()
-			if err := c.Connect(); err != nil {
+			if err := c.Connect(cmd.Context()); err != nil {
 				exitError(err.Error(), 1)
 			}
 
@@ -72,15 +72,15 @@ func makeSendMediaCmd(use, short, msgType string, needsCaption bool) *cobra.Comm
 			var resp any
 			switch msgType {
 			case "image":
-				resp, err = c.SendImage(args[0], data, fname, sendCaption)
+				resp, err = c.SendImage(cmd.Context(), args[0], data, fname, sendCaption)
 			case "video":
-				resp, err = c.SendVideo(args[0], data, fname, sendCaption)
+				resp, err = c.SendVideo(cmd.Context(), args[0], data, fname, sendCaption)
 			case "audio":
-				resp, err = c.SendAudio(args[0], data, fname)
+				resp, err = c.SendAudio(cmd.Context(), args[0], data, fname)
 			case "document":
-				resp, err = c.SendDocument(args[0], data, fname)
+				resp, err = c.SendDocument(cmd.Context(), args[0], data, fname)
 			case "sticker":
-				resp, err = c.SendSticker(args[0], data)
+				resp, err = c.SendSticker(cmd.Context(), args[0], data)
 			}
 			if err != nil {
 				exitError(err.Error(), 1)
@@ -101,7 +101,7 @@ var sendLocationCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
@@ -113,7 +113,7 @@ var sendLocationCmd = &cobra.Command{
 		if err != nil {
 			exitError(fmt.Sprintf("invalid longitude %q: %v", args[2], err), 1)
 		}
-		resp, err := c.SendLocation(args[0], lat, lon, sendName)
+		resp, err := c.SendLocation(cmd.Context(), args[0], lat, lon, sendName)
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -128,11 +128,11 @@ var sendContactCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
-		resp, err := c.SendContact(args[0], args[1])
+		resp, err := c.SendContact(cmd.Context(), args[0], args[1])
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -147,11 +147,11 @@ var sendReactionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
-		if err := c.SendReaction(args[0], args[1]); err != nil {
+		if err := c.SendReaction(cmd.Context(), args[0], args[1]); err != nil {
 			exitError(err.Error(), 1)
 		}
 		fmt.Println("Reaction sent.")

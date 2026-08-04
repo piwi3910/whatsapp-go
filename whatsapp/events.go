@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"encoding/json"

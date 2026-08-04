@@ -1,4 +1,4 @@
-package client
+package whatsapp
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 )
 
 // GetContacts returns all synced contacts.
-func (c *Client) GetContacts() ([]models.Contact, error) {
-	contacts, err := c.wac.Store.Contacts.GetAllContacts(context.Background())
+func (c *Client) GetContacts(ctx context.Context) ([]models.Contact, error) {
+	contacts, err := c.wac.Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting contacts: %w", err)
 	}
@@ -29,14 +29,14 @@ func (c *Client) GetContacts() ([]models.Contact, error) {
 }
 
 // GetContactInfo returns info about a specific contact.
-func (c *Client) GetContactInfo(jidStr string) (*models.Contact, error) {
+func (c *Client) GetContactInfo(ctx context.Context, jidStr string) (*models.Contact, error) {
 	j, err := c.parseJID(jidStr)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get user info from WhatsApp
-	users, err := c.wac.GetUserInfo(context.Background(), []types.JID{j})
+	users, err := c.wac.GetUserInfo(ctx, []types.JID{j})
 	if err != nil {
 		return nil, fmt.Errorf("getting user info: %w", err)
 	}
@@ -53,7 +53,7 @@ func (c *Client) GetContactInfo(jidStr string) (*models.Contact, error) {
 	}
 
 	// Try to get name from contact store
-	stored, err := c.wac.Store.Contacts.GetContact(context.Background(), j)
+	stored, err := c.wac.Store.Contacts.GetContact(ctx, j)
 	if err == nil {
 		contact.Name = stored.FullName
 		contact.PushName = stored.PushName
@@ -63,21 +63,21 @@ func (c *Client) GetContactInfo(jidStr string) (*models.Contact, error) {
 }
 
 // BlockContact blocks a contact.
-func (c *Client) BlockContact(jidStr string) error {
+func (c *Client) BlockContact(ctx context.Context, jidStr string) error {
 	j, err := c.parseJID(jidStr)
 	if err != nil {
 		return err
 	}
-	_, err = c.wac.UpdateBlocklist(context.Background(), j, events.BlocklistChangeActionBlock)
+	_, err = c.wac.UpdateBlocklist(ctx, j, events.BlocklistChangeActionBlock)
 	return err
 }
 
 // UnblockContact unblocks a contact.
-func (c *Client) UnblockContact(jidStr string) error {
+func (c *Client) UnblockContact(ctx context.Context, jidStr string) error {
 	j, err := c.parseJID(jidStr)
 	if err != nil {
 		return err
 	}
-	_, err = c.wac.UpdateBlocklist(context.Background(), j, events.BlocklistChangeActionUnblock)
+	_, err = c.wac.UpdateBlocklist(ctx, j, events.BlocklistChangeActionUnblock)
 	return err
 }

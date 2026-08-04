@@ -14,12 +14,12 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/piwi3910/whatsapp-go/internal/api"
-	"github.com/piwi3910/whatsapp-go/internal/client"
 	"github.com/piwi3910/whatsapp-go/internal/config"
 	"github.com/piwi3910/whatsapp-go/internal/models"
 	"github.com/piwi3910/whatsapp-go/internal/pidfile"
 	"github.com/piwi3910/whatsapp-go/internal/store"
 	"github.com/piwi3910/whatsapp-go/internal/webhook"
+	"github.com/piwi3910/whatsapp-go/whatsapp"
 )
 
 var servePort int
@@ -68,7 +68,7 @@ var serveCmd = &cobra.Command{
 		// Create client
 		waLogger := waLog.Stdout("wa", "WARN", true)
 		waDBPath := filepath.Join(filepath.Dir(cfg.Database.Path), "whatsmeow.db")
-		c, err := client.New(s, waDBPath, waLogger)
+		c, err := whatsapp.New(s, waDBPath, waLogger)
 		if err != nil {
 			exitError(fmt.Sprintf("creating client: %v", err), 1)
 		}
@@ -96,7 +96,7 @@ var serveCmd = &cobra.Command{
 		c.SetupEventHandlers()
 
 		// Connect to WhatsApp (if previously logged in)
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			log.Printf("WhatsApp connection: %v (login may be needed)", err)
 		}
 

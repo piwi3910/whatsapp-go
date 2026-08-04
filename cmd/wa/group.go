@@ -2,11 +2,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
-	"github.com/piwi3910/whatsapp-go/internal/client"
+	"github.com/piwi3910/whatsapp-go/whatsapp"
 )
 
 var groupCmd = &cobra.Command{
@@ -21,10 +22,10 @@ var groupCreateCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		group, err := c.CreateGroup(args[0], args[1:])
+		group, err := c.CreateGroup(cmd.Context(), args[0], args[1:])
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -38,10 +39,10 @@ var groupListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		groups, err := c.GetGroups()
+		groups, err := c.GetGroups(cmd.Context())
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -62,10 +63,10 @@ var groupInfoCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		group, err := c.GetGroupInfo(args[0])
+		group, err := c.GetGroupInfo(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
@@ -80,10 +81,10 @@ var groupJoinCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		jid, err := c.JoinGroup(args[0])
+		jid, err := c.JoinGroup(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -98,10 +99,10 @@ var groupLeaveCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		if err := c.LeaveGroup(args[0]); err != nil {
+		if err := c.LeaveGroup(cmd.Context(), args[0]); err != nil {
 			exitError(err.Error(), 1)
 		}
 		fmt.Println("Left group.")
@@ -115,10 +116,10 @@ var groupInviteCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		c, _, cleanup := newClient()
 		defer cleanup()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
-		link, err := c.GetInviteLink(args[0])
+		link, err := c.GetInviteLink(cmd.Context(), args[0])
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
@@ -126,7 +127,7 @@ var groupInviteCmd = &cobra.Command{
 	},
 }
 
-func makeParticipantCmd(use, short string, action func(client.Service, string, []string) error) *cobra.Command {
+func makeParticipantCmd(use, short string, action func(context.Context, whatsapp.Service, string, []string) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -134,10 +135,10 @@ func makeParticipantCmd(use, short string, action func(client.Service, string, [
 		Run: func(cmd *cobra.Command, args []string) {
 			c, _, cleanup := newClient()
 			defer cleanup()
-			if err := c.Connect(); err != nil {
+			if err := c.Connect(cmd.Context()); err != nil {
 				exitError(err.Error(), 1)
 			}
-			if err := action(c, args[0], args[1:]); err != nil {
+			if err := action(cmd.Context(), c, args[0], args[1:]); err != nil {
 				exitError(err.Error(), 1)
 			}
 			fmt.Println("Done.")
@@ -149,10 +150,18 @@ func init() {
 	groupCmd.AddCommand(
 		groupCreateCmd, groupListCmd, groupInfoCmd,
 		groupJoinCmd, groupLeaveCmd, groupInviteCmd,
-		makeParticipantCmd("add <group-jid> <jid>...", "Add participants", func(c client.Service, gj string, p []string) error { return c.AddParticipants(gj, p) }),
-		makeParticipantCmd("remove <group-jid> <jid>...", "Remove participants", func(c client.Service, gj string, p []string) error { return c.RemoveParticipants(gj, p) }),
-		makeParticipantCmd("promote <group-jid> <jid>...", "Promote to admin", func(c client.Service, gj string, p []string) error { return c.PromoteParticipants(gj, p) }),
-		makeParticipantCmd("demote <group-jid> <jid>...", "Demote from admin", func(c client.Service, gj string, p []string) error { return c.DemoteParticipants(gj, p) }),
+		makeParticipantCmd("add <group-jid> <jid>...", "Add participants", func(ctx context.Context, c whatsapp.Service, gj string, p []string) error {
+			return c.AddParticipants(ctx, gj, p)
+		}),
+		makeParticipantCmd("remove <group-jid> <jid>...", "Remove participants", func(ctx context.Context, c whatsapp.Service, gj string, p []string) error {
+			return c.RemoveParticipants(ctx, gj, p)
+		}),
+		makeParticipantCmd("promote <group-jid> <jid>...", "Promote to admin", func(ctx context.Context, c whatsapp.Service, gj string, p []string) error {
+			return c.PromoteParticipants(ctx, gj, p)
+		}),
+		makeParticipantCmd("demote <group-jid> <jid>...", "Demote from admin", func(ctx context.Context, c whatsapp.Service, gj string, p []string) error {
+			return c.DemoteParticipants(ctx, gj, p)
+		}),
 	)
 	rootCmd.AddCommand(groupCmd)
 }

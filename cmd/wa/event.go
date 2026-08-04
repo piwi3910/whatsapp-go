@@ -46,7 +46,7 @@ var eventListenCmd = &cobra.Command{
 		})
 
 		c.SetupEventHandlers()
-		if err := c.Connect(); err != nil {
+		if err := c.Connect(cmd.Context()); err != nil {
 			exitError(err.Error(), 1)
 		}
 
