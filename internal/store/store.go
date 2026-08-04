@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,7 +23,13 @@ func New(path string) (*Store, error) {
 	// goroutine persisting inbound messages, and HTTP/library callers. With
 	// no busy timeout SQLite returns SQLITE_BUSY immediately on that overlap,
 	// which previously surfaced as silently dropped inbound messages.
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)")
+	// auto_vacuum(incremental) lets ReclaimFreeSpace recover the space freed
+	// by pruned media blobs with a cheap incremental pass instead of a full
+	// VACUUM (which rewrites the whole file and needs a second copy of it on
+	// disk). It only takes effect when the database is *created*; an
+	// existing file keeps its current mode and falls back to the gated full
+	// VACUUM, so this is safe to add to a deployed system.
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)&_pragma=auto_vacuum(incremental)")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -48,6 +55,13 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) DB() *sql.DB  { return s.db }
 
 func (s *Store) migrate() error {
+	if err := s.createTables(); err != nil {
+		return err
+	}
+	return s.migrateEventDedupe()
+}
+
+func (s *Store) createTables() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS messages (
 	id          TEXT PRIMARY KEY NOT NULL,
@@ -99,6 +113,94 @@ CREATE TABLE IF NOT EXISTS webhooks (
 	secret     TEXT,
 	created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY NOT NULL,
+	value TEXT NOT NULL
+);
 `)
 	return err
+}
+
+// migrateEventDedupe adds the events.dedupe_key column and its UNIQUE
+// index to databases created before event deduplication existed.
+//
+// It runs on every open and must be safe on a database that already holds
+// duplicate events: the backfill assigns the key to the FIRST row of each
+// duplicate group only and leaves the later copies NULL, so creating the
+// UNIQUE index can never fail on existing data (SQLite allows any number of
+// NULLs in a unique index). No row is ever deleted or rewritten.
+func (s *Store) migrateEventDedupe() error {
+	has, err := s.columnExists("events", "dedupe_key")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := s.db.Exec(`ALTER TABLE events ADD COLUMN dedupe_key TEXT`); err != nil {
+			return fmt.Errorf("adding events.dedupe_key: %w", err)
+		}
+	}
+
+	// Backfill the natural key (event type + composite message ID from the
+	// payload) for message events, first occurrence wins.
+	if _, err := s.db.Exec(`
+UPDATE events AS e
+SET dedupe_key = e.type || ':' || json_extract(e.payload, '$.id')
+WHERE e.dedupe_key IS NULL
+  AND e.type IN ('message.received', 'message.sent', 'message.reaction')
+  AND json_valid(e.payload)
+  AND json_extract(e.payload, '$.id') IS NOT NULL
+  -- first occurrence of each duplicate group only; later copies keep a
+  -- NULL key, which the UNIQUE index tolerates
+  AND e.id IN (
+	SELECT MIN(id) FROM events
+	WHERE dedupe_key IS NULL
+	  AND type IN ('message.received', 'message.sent', 'message.reaction')
+	  AND json_valid(payload)
+	  AND json_extract(payload, '$.id') IS NOT NULL
+	GROUP BY type, json_extract(payload, '$.id')
+  )
+  -- and never re-claim a key an earlier migration already assigned
+  AND NOT EXISTS (
+	SELECT 1 FROM events x
+	WHERE x.dedupe_key = e.type || ':' || json_extract(e.payload, '$.id')
+  )`); err != nil {
+		return fmt.Errorf("backfilling events.dedupe_key: %w", err)
+	}
+
+	if _, err := s.db.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe_key ON events (dedupe_key)`); err != nil {
+		return fmt.Errorf("creating events dedupe index: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) columnExists(table, column string) (bool, error) {
+	rows, err := s.db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false, fmt.Errorf("inspecting %s columns: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, fmt.Errorf("scanning %s columns: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func (s *Store) getMetaInt64(key string) (int64, error) {
+	var v int64
+	err := s.db.QueryRow(`SELECT CAST(value AS INTEGER) FROM meta WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("reading meta %q: %w", key, err)
+	}
+	return v, nil
 }

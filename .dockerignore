@@ -1,0 +1,18 @@
+# Keep the build context small and the layer cache stable: none of this
+# affects the compiled binary.
+.git
+.github
+.gitignore
+deploy
+docs
+*.md
+!go.mod
+!go.sum
+
+# Local state that must never end up baked into an image.
+*.db
+*.db-shm
+*.db-wal
+*.pid
+config.yaml
+.wa

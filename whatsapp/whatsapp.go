@@ -155,8 +155,15 @@ func Open(opts Options) (*Client, error) {
 }
 
 // Close disconnects the client and releases its stores. It is safe to call
-// on a Client that was never connected.
+// on a Client that was never connected, and safe to call more than once.
 func (c *Client) Close() error {
+	// Signal goroutines this client owns (the QR bridge) before tearing the
+	// connection down, so an abandoned login cannot outlive the Client.
+	c.closeOnce.Do(func() {
+		if c.done != nil {
+			close(c.done)
+		}
+	})
 	c.Disconnect()
 	if c.ownsStore && c.store != nil {
 		return c.store.Close()
@@ -167,7 +174,10 @@ func (c *Client) Close() error {
 // IsLoggedIn reports whether this client has a stored device pairing. When
 // false, Login must complete a QR scan before Connect can succeed.
 func (c *Client) IsLoggedIn() bool {
-	return c.wac.Store != nil && c.wac.Store.ID != nil
+	// Uses the identity snapshot rather than whatsmeow's store, which is
+	// mutated concurrently by pairing and logout.
+	_, ok := c.ident.jidString()
+	return ok
 }
 
 // OnEvent registers a handler invoked for every event (inbound messages,

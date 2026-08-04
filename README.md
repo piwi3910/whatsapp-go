@@ -22,7 +22,7 @@ go build -o wa ./cmd/wa/
 
 ## Installation
 
-Requires Go 1.21+.
+Requires Go 1.25+.
 
 ```bash
 git clone https://github.com/piwi3910/whatsapp-go.git
@@ -219,6 +219,28 @@ All endpoints require `Authorization: Bearer <api-key>` (except health).
 | `DELETE` | `/api/v1/webhooks/:id` | Delete webhook |
 | `GET` | `/api/v1/events?after=0&limit=50` | Poll events (cursor-based) |
 
+### Consuming events reliably
+
+`GET /api/v1/events?after=<cursor>&limit=<n>` is the restart-safe way to
+receive messages. Persist the last event ID you processed and pass it as
+`after`.
+
+- **`payload` is a nested JSON object**, not a string — read
+  `event.payload.id` directly. (This matches webhook deliveries, which
+  always embedded it as JSON.)
+- **Delivery is at-least-once.** WhatsApp redelivers after a reconnect or
+  history sync. Events carry a dedupe key derived from the message
+  identity, which suppresses the common case, but consumers should still
+  key on `payload.id`.
+- **`410 Gone` means you fell behind retention** — the log was pruned past
+  your cursor. The body carries a safe cursor to resume from; reconcile the
+  gap from `GET /api/v1/messages` (the message table is not pruned), then
+  resume. Silently skipping ahead is impossible by design.
+- **A malformed cursor is a `400`, not a reset.** Bad input never silently
+  replays the whole buffer.
+- An empty page echoes your cursor back, so storing the returned cursor is
+  always safe. `limit` is clamped to 500.
+
 ### Response Format
 
 ```json
@@ -283,7 +305,12 @@ Events are signed with HMAC-SHA256 via the `X-Wa-Signature: sha256=<hex>` header
 
 ## Configuration
 
-Config file: `~/.config/wa/config.yaml` (created automatically on first run).
+Configuration is resolved **defaults → config file → environment**, with
+environment variables winning. The server **never writes the config file on
+its own**; pass `wa serve --write-config` if you want the current settings
+(including a generated API key) persisted.
+
+Config file: `~/.config/wa/config.yaml` (not created automatically).
 
 ```yaml
 api_key: "wa_xxxxxxxxxxxxx"     # Auto-generated, used for API auth
@@ -298,6 +325,39 @@ events:
 webhooks: []                    # Pre-configured webhooks
 allow_private_webhook_targets: false
 ```
+
+### Environment variables
+
+| Variable | Overrides |
+|---|---|
+| `WA_API_KEY` | `api_key` |
+| `WA_HOST`, `WA_PORT` | `server.host`, `server.port` |
+| `WA_DB_PATH` | `database.path` |
+| `WA_MAX_UPLOAD_SIZE` | `server.max_upload_size` |
+| `WA_EVENTS_MAX_BUFFER` | `events.max_buffer` |
+| `WA_ALLOW_PRIVATE_WEBHOOK_TARGETS` | `allow_private_webhook_targets` |
+| `WA_RATE_LIMIT_RPS`, `WA_RATE_LIMIT_BURST` | API rate limit (`0` disables) |
+| `WA_CONTAINER` | container mode: bind `0.0.0.0`, DB under `/data`, skip the PID file, JSON logs |
+| `WA_LOG_FORMAT`, `WA_LOG_LEVEL` | log output |
+
+A malformed value is a startup error rather than a silently ignored setting.
+
+## Running in Kubernetes
+
+`deploy/` holds a ready manifest set and `Dockerfile` builds a distroless,
+non-root image. Three constraints are structural, not preferences:
+
+- **One replica, `strategy: Recreate`.** The WhatsApp pairing and the
+  message store are local SQLite files on a PVC; two pods would fight over
+  them, and a rolling update would deadlock on the ReadWriteOnce volume.
+- **`securityContext.fsGroup` must match the image's GID (65532).** A fresh
+  PVC mounts root-owned, and the image runs non-root, so without it every
+  write fails.
+- **Losing the volume unlinks the device** and requires a new QR scan.
+
+Probes: `/api/v1/healthz` for liveness (process alive), `/api/v1/readyz` for
+readiness (200 only while actually connected to WhatsApp, 503 otherwise).
+Metrics in Prometheus text format at `/metrics`.
 
 ### Webhook targets and SSRF
 

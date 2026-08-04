@@ -3,6 +3,8 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"go.mau.fi/whatsmeow"
@@ -62,13 +64,13 @@ func (c *Client) GetGroupInfo(ctx context.Context, groupJID string) (*models.Gro
 }
 
 // JoinGroup joins a group via invite link. Returns the group JID.
+//
+// Accepts a bare invite code or any chat.whatsapp.com link form
+// (http/https, with or without the /invite/ segment, with query or fragment).
 func (c *Client) JoinGroup(ctx context.Context, inviteLink string) (string, error) {
-	// Extract code from link (format: https://chat.whatsapp.com/CODE)
-	code := inviteLink
-	if strings.HasPrefix(code, "https://chat.whatsapp.com/") {
-		code = strings.TrimPrefix(code, "https://chat.whatsapp.com/")
-	} else if strings.HasPrefix(code, "http://chat.whatsapp.com/") {
-		code = strings.TrimPrefix(code, "http://chat.whatsapp.com/")
+	code, err := parseInviteCode(inviteLink)
+	if err != nil {
+		return "", err
 	}
 
 	groupJID, err := c.wac.JoinGroupWithLink(ctx, code)
@@ -137,6 +139,74 @@ func (c *Client) updateParticipants(ctx context.Context, groupJID string, partic
 
 	_, err = c.wac.UpdateGroupParticipants(ctx, gJID, jids, action)
 	return err
+}
+
+// inviteCodePattern is the character set WhatsApp uses for invite codes
+// (URL-safe base64-ish). Bounding it keeps a mistyped URL or a pasted
+// sentence from being sent to the server as a "code".
+var inviteCodePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,64}$`)
+
+// inviteHosts are the hosts that carry group invite links.
+var inviteHosts = map[string]bool{
+	"chat.whatsapp.com":     true,
+	"www.chat.whatsapp.com": true,
+}
+
+// parseInviteCode extracts the invite code from a group invite link.
+//
+// The previous implementation trimmed two literal prefixes, so the
+// /invite/CODE form, query strings and fragments all ended up in the "code"
+// passed to the server. Parsing the URL properly handles every documented
+// shape and rejects links pointing somewhere else entirely.
+func parseInviteCode(inviteLink string) (string, error) {
+	s := strings.TrimSpace(inviteLink)
+	if s == "" {
+		return "", fmt.Errorf("empty invite link")
+	}
+
+	// A bare code has no URL structure; accept it directly.
+	if !strings.Contains(s, "/") && !strings.Contains(s, "?") {
+		if !inviteCodePattern.MatchString(s) {
+			return "", fmt.Errorf("invalid invite code %q", inviteLink)
+		}
+		return s, nil
+	}
+
+	// Tolerate scheme-less links like "chat.whatsapp.com/CODE", which
+	// url.Parse would otherwise read as a path.
+	if !strings.Contains(s, "://") {
+		s = "https://" + s
+	}
+
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", fmt.Errorf("invalid invite link %q: %w", inviteLink, err)
+	}
+	if !inviteHosts[strings.ToLower(u.Hostname())] {
+		return "", fmt.Errorf("invalid invite link %q: unexpected host %q", inviteLink, u.Hostname())
+	}
+
+	// Some links carry the code as ?code=..., most carry it in the path
+	// (optionally behind an "invite" segment).
+	code := u.Query().Get("code")
+	if code == "" {
+		segments := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+		for i := len(segments) - 1; i >= 0; i-- {
+			if seg := segments[i]; seg != "" && seg != "invite" {
+				code = seg
+				break
+			}
+		}
+	}
+
+	decoded, err := url.PathUnescape(code)
+	if err == nil {
+		code = decoded
+	}
+	if !inviteCodePattern.MatchString(code) {
+		return "", fmt.Errorf("invalid invite link %q: no usable invite code", inviteLink)
+	}
+	return code, nil
 }
 
 func groupInfoToModel(info *types.GroupInfo) *models.Group {

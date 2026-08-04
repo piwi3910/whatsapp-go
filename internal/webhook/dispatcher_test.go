@@ -23,7 +23,7 @@ func TestDispatch_MatchingEvent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
+	d := newTestDispatcher(t, Options{})
 	d.Register(models.Webhook{
 		ID:     "wh1",
 		URL:    srv.URL,
@@ -32,7 +32,7 @@ func TestDispatch_MatchingEvent(t *testing.T) {
 
 	d.Dispatch(models.Event{
 		Type:      "message.received",
-		Payload:   `{"text":"hello"}`,
+		Payload:   json.RawMessage(`{"text":"hello"}`),
 		Timestamp: time.Now().Unix(),
 	})
 
@@ -66,11 +66,11 @@ func TestDispatch_WildcardSubscription(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
+	d := newTestDispatcher(t, Options{})
 	d.Register(models.Webhook{ID: "wh1", URL: srv.URL, Events: []string{"*"}})
 
 	d.Dispatch(models.Event{
-		Type: "group.created", Payload: "{}", Timestamp: time.Now().Unix(),
+		Type: "group.created", Payload: json.RawMessage("{}"), Timestamp: time.Now().Unix(),
 	})
 
 	select {
@@ -93,11 +93,11 @@ func TestDispatch_NonMatchingEvent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
+	d := newTestDispatcher(t, Options{})
 	d.Register(models.Webhook{ID: "wh1", URL: srv.URL, Events: []string{"message.sent"}})
 
 	d.Dispatch(models.Event{
-		Type: "message.received", Payload: "{}", Timestamp: time.Now().Unix(),
+		Type: "message.received", Payload: json.RawMessage("{}"), Timestamp: time.Now().Unix(),
 	})
 
 	// A short wait is legitimate here: there is no signal to wait for, and
@@ -121,13 +121,13 @@ func TestDispatch_HMACSignature(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
+	d := newTestDispatcher(t, Options{})
 	d.Register(models.Webhook{
 		ID: "wh1", URL: srv.URL, Events: []string{"*"}, Secret: "mysecret",
 	})
 
 	d.Dispatch(models.Event{
-		Type: "test", Payload: "{}", Timestamp: time.Now().Unix(),
+		Type: "test", Payload: json.RawMessage("{}"), Timestamp: time.Now().Unix(),
 	})
 
 	var sigHeader string
@@ -145,7 +145,7 @@ func TestDispatch_HMACSignature(t *testing.T) {
 }
 
 func TestUnregister(t *testing.T) {
-	d := NewWithPolicy(Policy{AllowPrivateTargets: true})
+	d := newTestDispatcher(t, Options{})
 	d.Register(models.Webhook{ID: "wh1", URL: "http://example.com", Events: []string{"*"}})
 	d.Unregister("wh1")
 

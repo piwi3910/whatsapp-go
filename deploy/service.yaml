@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: whatsapp-go
+  labels:
+    app.kubernetes.io/name: whatsapp-go
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: whatsapp-go
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

@@ -1,6 +1,8 @@
 package webhook
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,10 +118,14 @@ func TestDispatcherUsesSafeClient(t *testing.T) {
 	if d.client.CheckRedirect == nil {
 		t.Fatal("dispatcher's HTTP client follows redirects; it must use newSafeClient")
 	}
-	d.Register(models.Webhook{ID: "wh_test", URL: "http://127.0.0.1:1/hook", Events: []string{"*"}})
-	// Dispatch is fire-and-forget; this only asserts it does not panic with
-	// the safe client installed.
-	d.Dispatch(models.Event{ID: 1, Type: "message.received", Payload: "{}"})
+	_ = d.Register(models.Webhook{ID: "wh_test", URL: "http://127.0.0.1:1/hook", Events: []string{"*"}})
+	// Dispatch only enqueues; this asserts it does not panic with the safe
+	// client installed. Shut the dispatcher down afterwards so its worker
+	// does not outlive the test retrying an unreachable port.
+	d.Dispatch(models.Event{ID: 1, Type: "message.received", Payload: json.RawMessage("{}")})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = d.Shutdown(ctx)
 }
 
 // TestPolicyAllowPrivateTargets covers the self-hosted case: a receiver on

@@ -127,6 +127,12 @@ func newSafeClient(timeout time.Duration, p Policy) *http.Client {
 			return fmt.Errorf("webhook target redirected to %s; redirects are not followed", req.URL.Redacted())
 		},
 		Transport: &http.Transport{
+			// Honour proxy env vars, with one caveat: when a proxy is set,
+			// the dial-time guard below inspects the proxy's address rather
+			// than the webhook target's, so the SSRF check effectively
+			// delegates to the proxy. That is acceptable because the proxy
+			// is operator-configured, not caller-supplied — but do not set
+			// one to a host that will forward anywhere.
 			Proxy:                 http.ProxyFromEnvironment,
 			MaxIdleConnsPerHost:   2,
 			IdleConnTimeout:       90 * time.Second,

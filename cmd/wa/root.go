@@ -33,13 +33,16 @@ var rootCmd = &cobra.Command{
 			configPath = filepath.Join(config.Dir(), "config.yaml")
 		}
 
+		// config.Load resolves env > file > default and never writes to
+		// disk, so a missing config file (the normal case in a container) is
+		// not an error.
 		var err error
 		cfg, err = config.Load(configPath)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		// Override DB path if flag set
+		// Override DB path if flag set — an explicit flag beats everything.
 		if dbPath != "" {
 			cfg.Database.Path = dbPath
 		}

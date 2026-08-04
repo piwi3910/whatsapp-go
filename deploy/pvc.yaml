@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: whatsapp-go-state
+  labels:
+    app.kubernetes.io/name: whatsapp-go
+spec:
+  # ReadWriteOnce, and only ever one pod: the volume holds a SQLite database
+  # and the whatsmeow device session. Both are single-writer — two processes
+  # against the same files corrupt the database and get the device unlinked
+  # by WhatsApp.
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: <your-class>   # uncomment if the cluster has no default

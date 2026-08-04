@@ -9,10 +9,55 @@ import (
 	"github.com/skip2/go-qrcode"
 )
 
+// stateConnected is the ConnectionStatus.State value that means the WhatsApp
+// socket is up and messages can flow. Everything else ("connecting",
+// "disconnected", "logged_out") means this replica cannot do its job.
+const stateConnected = "connected"
+
+// handleLiveness answers the liveness probe. It is intentionally
+// unconditional: liveness asks "is this process wedged?", and the answer is
+// no as long as the HTTP server can still route a request. Reporting session
+// trouble here would make an orchestrator kill and restart the pod, which
+// neither restores a lost session nor recovers a disconnect any faster than
+// the in-process supervisor does — it just loses the buffered state.
+func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// handleReadiness answers the readiness probe: 200 only when the WhatsApp
+// session is actually connected, 503 otherwise with the state in the body.
+// This is what takes a logged-out or disconnected replica out of service
+// instead of leaving it advertised as healthy while silently dropping work.
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	s.readyProbes.Add(1)
+	status := s.client.Status()
+	ready := status.State == stateConnected
+	code := http.StatusOK
+	if !ready {
+		s.notReady.Add(1)
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{
+		"ready":          ready,
+		"state":          status.State,
+		"uptime_seconds": int(time.Since(s.startTime).Seconds()),
+		"version":        s.version,
+	})
+}
+
+// handleHealth is the pre-existing endpoint, kept for backwards
+// compatibility. It behaves as a readiness check: it used to return 200
+// unconditionally, which meant a monitor could never tell a working replica
+// from one whose session had expired.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := s.client.Status()
-	writeJSON(w, http.StatusOK, map[string]any{
+	code := http.StatusOK
+	if status.State != stateConnected {
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{
 		"state":          status.State,
+		"ready":          status.State == stateConnected,
 		"uptime_seconds": int(time.Since(s.startTime).Seconds()),
 		"version":        s.version,
 	})

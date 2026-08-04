@@ -22,11 +22,31 @@ type proxyClient struct {
 	http    *http.Client
 }
 
+// Timeouts for the CLI's HTTP client. A client with no timeout at all waits
+// forever on a wedged server, and the CLI then hangs with no output and no
+// way out but Ctrl-C.
+//
+// Two layers, because one number cannot serve both cases: media transfers are
+// legitimately slow and must not be cut off by a short overall deadline,
+// while a server that has accepted the connection and gone silent must be
+// detected quickly. ResponseHeaderTimeout catches the silent server in
+// seconds; the overall Timeout is the backstop for a transfer that stalls
+// mid-body.
+const (
+	proxyResponseHeaderTimeout = 30 * time.Second
+	proxyRequestTimeout        = 5 * time.Minute
+)
+
 func newProxyClient(baseURL, apiKey string) *proxyClient {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = proxyResponseHeaderTimeout
 	return &proxyClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		http:    &http.Client{},
+		http: &http.Client{
+			Transport: transport,
+			Timeout:   proxyRequestTimeout,
+		},
 	}
 }
 

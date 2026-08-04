@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
@@ -42,19 +43,19 @@ func (c *Client) SetupEventHandlers() {
 		case *events.Connected:
 			c.dispatch(models.Event{
 				Type:      models.EventConnectionConnected,
-				Payload:   "{}",
+				Payload:   json.RawMessage(`{}`),
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.Disconnected:
 			c.dispatch(models.Event{
 				Type:      models.EventConnectionDisconnected,
-				Payload:   "{}",
+				Payload:   json.RawMessage(`{}`),
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.LoggedOut:
 			c.dispatch(models.Event{
 				Type:      models.EventConnectionLoggedOut,
-				Payload:   "{}",
+				Payload:   json.RawMessage(`{}`),
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.GroupInfo:
@@ -63,7 +64,7 @@ func (c *Client) SetupEventHandlers() {
 			payload, _ := json.Marshal(map[string]string{"group_jid": v.JID.String()})
 			c.dispatch(models.Event{
 				Type:      models.EventGroupCreated,
-				Payload:   string(payload),
+				Payload:   payload,
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.PushName:
@@ -72,7 +73,7 @@ func (c *Client) SetupEventHandlers() {
 			})
 			c.dispatch(models.Event{
 				Type:      models.EventContactUpdated,
-				Payload:   string(payload),
+				Payload:   payload,
 				Timestamp: time.Now().Unix(),
 			})
 		case *events.Presence:
@@ -81,7 +82,7 @@ func (c *Client) SetupEventHandlers() {
 			})
 			c.dispatch(models.Event{
 				Type:      models.EventPresenceUpdated,
-				Payload:   string(payload),
+				Payload:   payload,
 				Timestamp: time.Now().Unix(),
 			})
 		}
@@ -116,33 +117,7 @@ func (c *Client) handleMessage(v *events.Message) {
 		RawProto:  rawProto,
 	}
 
-	// Extract media metadata if present
-	if img := v.Message.GetImageMessage(); img != nil {
-		msg.MediaType = img.GetMimetype()
-		msg.MediaSize = int64(img.GetFileLength())
-		msg.MediaURL = img.GetDirectPath()
-		msg.MediaKey = img.GetMediaKey()
-	} else if vid := v.Message.GetVideoMessage(); vid != nil {
-		msg.MediaType = vid.GetMimetype()
-		msg.MediaSize = int64(vid.GetFileLength())
-		msg.MediaURL = vid.GetDirectPath()
-		msg.MediaKey = vid.GetMediaKey()
-	} else if aud := v.Message.GetAudioMessage(); aud != nil {
-		msg.MediaType = aud.GetMimetype()
-		msg.MediaSize = int64(aud.GetFileLength())
-		msg.MediaURL = aud.GetDirectPath()
-		msg.MediaKey = aud.GetMediaKey()
-	} else if doc := v.Message.GetDocumentMessage(); doc != nil {
-		msg.MediaType = doc.GetMimetype()
-		msg.MediaSize = int64(doc.GetFileLength())
-		msg.MediaURL = doc.GetDirectPath()
-		msg.MediaKey = doc.GetMediaKey()
-	} else if stk := v.Message.GetStickerMessage(); stk != nil {
-		msg.MediaType = stk.GetMimetype()
-		msg.MediaSize = int64(stk.GetFileLength())
-		msg.MediaURL = stk.GetDirectPath()
-		msg.MediaKey = stk.GetMediaKey()
-	}
+	populateMediaMetadata(msg, v.Message)
 
 	// Never swallow this: a failure here means the message is not persisted
 	// and consumers polling Events will never see it.
@@ -162,28 +137,93 @@ func (c *Client) handleMessage(v *events.Message) {
 	payload, _ := json.Marshal(msg)
 	c.dispatch(models.Event{
 		Type:      eventType,
-		Payload:   string(payload),
+		Payload:   payload,
 		Timestamp: info.Timestamp.Unix(),
 	})
 }
 
 func (c *Client) handleReceipt(v *events.Receipt) {
-	if v.Type == "read" {
-		for _, id := range v.MessageIDs {
-			localID := jid.CompositeMessageID(v.Chat.String(), v.Sender.String(), id)
+	// ReceiptTypeReadSelf is the same signal arriving from one of our own
+	// other devices; both mean "this message has been read".
+	if v.Type != types.ReceiptTypeRead && v.Type != types.ReceiptTypeReadSelf {
+		return
+	}
+
+	ownJID, _ := c.ident.jidString()
+	senders := receiptMessageSenders(v, ownJID)
+
+	for _, id := range v.MessageIDs {
+		for _, sender := range senders {
+			localID := jid.CompositeMessageID(v.Chat.String(), sender, id)
 			if err := c.store.UpdateReadStatus(localID, true); err != nil {
 				c.log.Warnf("updating read status for %s: %v", localID, err)
 			}
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"chat_jid":    v.Chat.String(),
-			"message_ids": v.MessageIDs,
-		})
-		c.dispatch(models.Event{
-			Type:      models.EventMessageRead,
-			Payload:   string(payload),
-			Timestamp: time.Now().Unix(),
-		})
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"chat_jid":    v.Chat.String(),
+		"message_ids": v.MessageIDs,
+	})
+	c.dispatch(models.Event{
+		Type:      models.EventMessageRead,
+		Payload:   payload,
+		Timestamp: time.Now().Unix(),
+	})
+}
+
+// receiptMessageSenders returns the candidate sender components of the local
+// composite message ID for a read receipt.
+//
+// The subtlety this fixes: v.Sender is whoever *read* the message, not who
+// sent it. For the common case — someone else read a message we sent — using
+// v.Sender produced a composite ID that matches no stored row, so every read
+// receipt updated zero rows. The message's own sender is v.MessageSender when
+// the server includes it (group reads), and otherwise this device, since a
+// receipt addressed to us is by definition about a message we sent.
+//
+// Both candidates are tried because a "read-self" receipt from our other
+// devices refers to an incoming message; updating a composite ID that does
+// not exist is a harmless no-op, whereas guessing wrong loses the update.
+func receiptMessageSenders(v *events.Receipt, ownJID string) []string {
+	var senders []string
+	if !v.MessageSender.IsEmpty() {
+		senders = append(senders, v.MessageSender.String())
+	}
+	if ownJID != "" && (len(senders) == 0 || senders[0] != ownJID) {
+		senders = append(senders, ownJID)
+	}
+	return senders
+}
+
+// populateMediaMetadata copies media fields out of whichever media sub-message
+// is present. Shared by the inbound path and by sendAndStore so a message we
+// sent is stored with the same shape as one we received.
+func populateMediaMetadata(dst *models.Message, msg *waE2E.Message) {
+	if dst == nil || msg == nil {
+		return
+	}
+	switch {
+	case msg.GetImageMessage() != nil:
+		m := msg.GetImageMessage()
+		dst.MediaType, dst.MediaSize = m.GetMimetype(), int64(m.GetFileLength())
+		dst.MediaURL, dst.MediaKey = m.GetDirectPath(), m.GetMediaKey()
+	case msg.GetVideoMessage() != nil:
+		m := msg.GetVideoMessage()
+		dst.MediaType, dst.MediaSize = m.GetMimetype(), int64(m.GetFileLength())
+		dst.MediaURL, dst.MediaKey = m.GetDirectPath(), m.GetMediaKey()
+	case msg.GetAudioMessage() != nil:
+		m := msg.GetAudioMessage()
+		dst.MediaType, dst.MediaSize = m.GetMimetype(), int64(m.GetFileLength())
+		dst.MediaURL, dst.MediaKey = m.GetDirectPath(), m.GetMediaKey()
+	case msg.GetDocumentMessage() != nil:
+		m := msg.GetDocumentMessage()
+		dst.MediaType, dst.MediaSize = m.GetMimetype(), int64(m.GetFileLength())
+		dst.MediaURL, dst.MediaKey = m.GetDirectPath(), m.GetMediaKey()
+	case msg.GetStickerMessage() != nil:
+		m := msg.GetStickerMessage()
+		dst.MediaType, dst.MediaSize = m.GetMimetype(), int64(m.GetFileLength())
+		dst.MediaURL, dst.MediaKey = m.GetDirectPath(), m.GetMediaKey()
 	}
 }
 
@@ -197,7 +237,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantAdded, Payload: string(payload), Timestamp: v.Timestamp.Unix(),
+			Type: models.EventGroupParticipantAdded, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
 	if len(v.Leave) > 0 {
@@ -209,7 +249,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantRemoved, Payload: string(payload), Timestamp: v.Timestamp.Unix(),
+			Type: models.EventGroupParticipantRemoved, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
 	if len(v.Promote) > 0 {
@@ -221,7 +261,7 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantPromoted, Payload: string(payload), Timestamp: v.Timestamp.Unix(),
+			Type: models.EventGroupParticipantPromoted, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
 	if len(v.Demote) > 0 {
@@ -233,13 +273,13 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 			"group_jid": v.JID.String(), "participants": jids,
 		})
 		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantDemoted, Payload: string(payload), Timestamp: v.Timestamp.Unix(),
+			Type: models.EventGroupParticipantDemoted, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
 	if v.Name != nil || v.Topic != nil {
 		payload, _ := json.Marshal(map[string]string{"group_jid": v.JID.String()})
 		c.dispatch(models.Event{
-			Type: models.EventGroupUpdated, Payload: string(payload), Timestamp: v.Timestamp.Unix(),
+			Type: models.EventGroupUpdated, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
 }

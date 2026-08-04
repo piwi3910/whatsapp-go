@@ -2,8 +2,10 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -23,6 +25,10 @@ func (c *Client) parseJID(input string) (types.JID, error) {
 	return types.ParseJID(normalized)
 }
 
+// ErrNotLoggedIn is returned by operations that need this device's own JID
+// while the client is unpaired (or has just been logged out).
+var ErrNotLoggedIn = errors.New("whatsapp: not logged in")
+
 // SendText sends a text message and stores it locally.
 func (c *Client) SendText(ctx context.Context, jidStr, text string) (*models.SendResponse, error) {
 	to, err := c.parseJID(jidStr)
@@ -34,26 +40,7 @@ func (c *Client) SendText(ctx context.Context, jidStr, text string) (*models.Sen
 		Conversation: proto.String(text),
 	}
 
-	resp, err := c.wac.SendMessage(ctx, to, msg)
-	if err != nil {
-		return nil, fmt.Errorf("sending text: %w", err)
-	}
-
-	localID := jid.CompositeMessageID(to.String(), c.wac.Store.ID.String(), resp.ID)
-	now := time.Now().Unix()
-
-	c.store.InsertMessage(&models.Message{
-		ID:        localID,
-		ChatJID:   to.String(),
-		SenderJID: c.wac.Store.ID.String(),
-		WaID:      resp.ID,
-		Type:      "text",
-		Content:   text,
-		Timestamp: now,
-		IsFromMe:  true,
-	})
-
-	return &models.SendResponse{MessageID: localID, Timestamp: now}, nil
+	return c.sendAndStore(ctx, to, msg, "text", "", nil)
 }
 
 // SendImage sends an image message.
@@ -219,12 +206,17 @@ func (c *Client) SendContact(ctx context.Context, jidStr, contactJIDStr string) 
 		return nil, err
 	}
 
-	// Build a simple vCard for the contact
-	vcard := fmt.Sprintf("BEGIN:VCARD\nVERSION:3.0\nTEL:%s\nEND:VCARD", contactJIDStr)
+	contact, err := c.parseJID(contactJIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid contact JID %q: %w", contactJIDStr, err)
+	}
+
+	displayName := contact.User
+	vcard := buildVCard(displayName, contact.User)
 
 	msg := &waE2E.Message{
 		ContactMessage: &waE2E.ContactMessage{
-			DisplayName: proto.String(contactJIDStr),
+			DisplayName: proto.String(displayName),
 			Vcard:       proto.String(vcard),
 		},
 	}
@@ -306,31 +298,104 @@ func (c *Client) GetMessage(_ context.Context, messageID string) (*models.Messag
 }
 
 // sendAndStore is a helper that sends a message and stores it locally.
+//
+// The stored row must be complete on first write. The echo of our own message
+// arrives later via events.Message with IsFromMe set, and the store's upsert
+// only refreshes content and is_read — so anything missing here (notably
+// raw_proto and the media metadata) stays missing forever, which is what used
+// to make DownloadMedia fail for every message this client sent.
 func (c *Client) sendAndStore(ctx context.Context, to types.JID, msg *waE2E.Message, msgType, caption string, mediaData []byte) (*models.SendResponse, error) {
+	// Resolve our own JID before sending: it is the sender component of the
+	// composite local ID, and reading it up front (from the race-free
+	// snapshot) means a concurrent logout cannot turn it into a nil
+	// dereference between the send and the store.
+	ownJID, ok := c.ident.jidString()
+	if !ok {
+		return nil, ErrNotLoggedIn
+	}
+
 	resp, err := c.wac.SendMessage(ctx, to, msg)
 	if err != nil {
 		return nil, fmt.Errorf("sending %s: %w", msgType, err)
 	}
 
-	localID := jid.CompositeMessageID(to.String(), c.wac.Store.ID.String(), resp.ID)
+	localID := jid.CompositeMessageID(to.String(), ownJID, resp.ID)
 	now := time.Now().Unix()
+
+	// Content is derived from the protobuf we just sent so that non-media
+	// payloads (location JSON, contact vCard, text) are stored the same way
+	// the inbound path would store them.
+	_, content, _ := extractMessageContent(msg)
 
 	stored := &models.Message{
 		ID:        localID,
 		ChatJID:   to.String(),
-		SenderJID: c.wac.Store.ID.String(),
+		SenderJID: ownJID,
 		WaID:      resp.ID,
 		Type:      msgType,
+		Content:   content,
 		Caption:   caption,
 		Timestamp: now,
 		IsFromMe:  true,
 	}
-	if mediaData != nil {
+	populateMediaMetadata(stored, msg)
+	if stored.MediaSize == 0 && mediaData != nil {
 		stored.MediaSize = int64(len(mediaData))
 	}
-	c.store.InsertMessage(stored)
+
+	// raw_proto is what DownloadMedia reconstructs the downloadable message
+	// from; without it, media we sent can never be re-downloaded.
+	if rawProto, err := proto.Marshal(msg); err != nil {
+		c.log.Warnf("marshaling sent %s message %s for storage: %v", msgType, localID, err)
+	} else {
+		stored.RawProto = rawProto
+	}
+
+	if err := c.store.InsertMessage(stored); err != nil {
+		c.log.Errorf("storing sent message %s: %v", localID, err)
+	}
 
 	return &models.SendResponse{MessageID: localID, Timestamp: now}, nil
+}
+
+// buildVCard renders a minimal vCard 3.0 for a phone contact.
+//
+// Both values are escaped: a raw newline, ';' or ',' in a property value ends
+// or splits the property, so unescaped input can inject arbitrary extra vCard
+// properties into the card the recipient receives. Callers additionally
+// validate the JID, so this is the second of two layers.
+func buildVCard(displayName, phone string) string {
+	// vCard lines are CRLF-delimited per RFC 6350 §3.2.
+	return "BEGIN:VCARD\r\n" +
+		"VERSION:3.0\r\n" +
+		"FN:" + vcardEscape(displayName) + "\r\n" +
+		"TEL;type=CELL;waid=" + vcardEscape(phone) + ":+" + vcardEscape(phone) + "\r\n" +
+		"END:VCARD"
+}
+
+// vcardEscape escapes a vCard text value per RFC 6350 §3.4: backslash,
+// newline, comma and semicolon are the characters with structural meaning.
+// A bare CR carries no meaning of its own and is dropped rather than encoded.
+func vcardEscape(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			// dropped: only meaningful as part of the CRLF line break
+		case ',':
+			b.WriteString(`\,`)
+		case ';':
+			b.WriteString(`\;`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // detectMIME detects the MIME type from filename extension, falling back to http.DetectContentType.
@@ -338,7 +403,9 @@ func detectMIME(filename string, data []byte) string {
 	ext := ""
 	for i := len(filename) - 1; i >= 0; i-- {
 		if filename[i] == '.' {
-			ext = filename[i:]
+			// Extensions arrive from user-supplied filenames, where case
+			// carries no meaning ("PHOTO.JPG" is a JPEG).
+			ext = strings.ToLower(filename[i:])
 			break
 		}
 	}

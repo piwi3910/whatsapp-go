@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whatsapp-go
+  labels:
+    app.kubernetes.io/name: whatsapp-go
+spec:
+  # Exactly one replica, always. A WhatsApp device session belongs to one
+  # connected client; a second replica linked to the same session gets one of
+  # them kicked, and both would be writing the same SQLite files.
+  replicas: 1
+  # Recreate, not RollingUpdate: a rolling update briefly runs the new pod
+  # alongside the old one. With a ReadWriteOnce volume the new pod would not
+  # even schedule (volume still attached to the old node), and if it did, the
+  # two processes would contend for the session and the database. Recreate
+  # accepts a few seconds of downtime to guarantee a single writer.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: whatsapp-go
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: whatsapp-go
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup must match the image's non-root GID. A PersistentVolume is
+        # mounted root-owned by default; the kubelet chowns it to fsGroup and
+        # sets the setgid bit, which is the only reason a uid-65532 process
+        # can write /data at all. Without this the process cannot open its
+        # database and crash-loops on startup.
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wa
+          image: ghcr.io/piwi3910/whatsapp-go:latest
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Configuration is env-only: no config file is present in the
+            # image, and the process never writes one. Precedence is
+            # env > file > default.
+            - name: WA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: whatsapp-go
+                  key: api-key
+            - name: WA_HOST
+              value: "0.0.0.0"
+            - name: WA_PORT
+              value: "8080"
+            - name: WA_DB_PATH
+              value: "/data/wa.db"
+            - name: WA_EVENTS_MAX_BUFFER
+              value: "10000"
+            # Sized against the memory limit below, not against WhatsApp's
+            # own ceiling: an upload is buffered (roughly twice its size at
+            # peak) before it is sent, so two concurrent 100MB uploads would
+            # OOM a 512Mi pod. Raise both together if you need larger media.
+            - name: WA_MAX_UPLOAD_SIZE
+              value: "16777216" # 16MiB
+            # Webhook receivers are sibling Services on a private network, so
+            # the SSRF guard has to be relaxed. Leave this false if webhook
+            # URLs can be registered by untrusted callers.
+            - name: WA_ALLOW_PRIVATE_WEBHOOK_TARGETS
+              value: "true"
+            - name: WA_CONTAINER
+              value: "true"
+            - name: WA_LOG_FORMAT
+              value: "json"
+          # Liveness: is the process wedged? Only an unresponsive HTTP server
+          # counts. A lost WhatsApp session must NOT restart the pod — only a
+          # human with the phone can re-pair it.
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness: is the WhatsApp session actually connected? 503 here
+          # pulls the pod out of the Service so callers fail fast instead of
+          # queueing messages into a dead session.
+          readinessProbe:
+            httpGet:
+              path: /api/v1/readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+          # The first connect (and any database migration) can take a while;
+          # a startup probe stops the liveness probe from firing during it.
+          startupProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24 # up to 2 minutes to come up
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              # Headroom for a couple of concurrent uploads at
+              # WA_MAX_UPLOAD_SIZE (buffered ~2x) plus the SQLite page cache.
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            # The image is a single static binary plus its data volume;
+            # nothing else needs to be writable.
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              mountPath: /data
+      # Give in-flight sends and the graceful HTTP shutdown time to finish.
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: whatsapp-go-state
