@@ -22,8 +22,19 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject unusable or dangerous targets before storing, so the caller
+	// learns immediately instead of registering a webhook that will only
+	// ever fail at dial time.
+	if err := s.dispatcher.Policy().ValidateURL(body.URL); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_URL", err.Error())
+		return
+	}
+
 	idBytes := make([]byte, 16)
-	rand.Read(idBytes)
+	if _, err := rand.Read(idBytes); err != nil {
+		writeError(w, http.StatusInternalServerError, "ID_ERROR", "generating webhook id")
+		return
+	}
 	whID := "wh_" + hex.EncodeToString(idBytes)
 
 	wh := &models.Webhook{

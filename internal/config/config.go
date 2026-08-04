@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -17,6 +18,13 @@ type Config struct {
 	Database DatabaseConfig  `yaml:"database"`
 	Events   EventsConfig    `yaml:"events"`
 	Webhooks []WebhookConfig `yaml:"webhooks"`
+
+	// AllowPrivateWebhookTargets permits webhook URLs pointing at loopback
+	// or private addresses. Off by default: on an internet-reachable
+	// server, anyone able to register a webhook could otherwise use it to
+	// reach services on the host's network. Turn it on when the receiver is
+	// deliberately private — e.g. another service in the same cluster.
+	AllowPrivateWebhookTargets bool `yaml:"allow_private_webhook_targets"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -107,4 +115,16 @@ func GenerateAPIKey() string {
 	b := make([]byte, 24)
 	_, _ = rand.Read(b)
 	return "wa_" + hex.EncodeToString(b)
+}
+
+// KeyFingerprint returns a short, non-reversible identifier for an API key,
+// safe to log: enough to confirm which key a client should be using without
+// putting the credential itself into log storage. Returns "none" for an
+// empty key.
+func KeyFingerprint(key string) string {
+	if key == "" {
+		return "none"
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:4])
 }

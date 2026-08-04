@@ -296,7 +296,29 @@ database:
 events:
   max_buffer: 10000             # Max events in polling buffer
 webhooks: []                    # Pre-configured webhooks
+allow_private_webhook_targets: false
 ```
+
+### Webhook targets and SSRF
+
+Webhook URLs are supplied by API callers and the server POSTs to them
+unattended, so by default it refuses targets that resolve to **loopback or
+private** addresses — otherwise anyone able to register a webhook could aim
+the server at services on its own network. Addresses that reach
+infrastructure rather than applications (**link-local**, including the
+`169.254.169.254` cloud metadata endpoint, plus multicast and the
+unspecified address) are refused **always**, whatever the setting.
+
+Every target is checked twice: once at registration, for a clear error, and
+again at the moment of the TCP dial, which is what actually closes the hole
+— a hostname can pass registration and resolve somewhere else afterwards.
+Redirects are never followed, since following one re-opens the hole a hop
+later.
+
+If your receiver is deliberately on a private network — an agent platform
+in the same Kubernetes cluster, a service on your LAN — set
+`allow_private_webhook_targets: true`. Only do this when you trust everyone
+who can call the API.
 
 ## Architecture
 

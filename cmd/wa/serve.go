@@ -46,7 +46,9 @@ var serveCmd = &cobra.Command{
 		// Generate API key if not set
 		if cfg.APIKey == "" {
 			cfg.APIKey = config.GenerateAPIKey()
-			log.Printf("Generated API key: %s", cfg.APIKey)
+			// Never log the key itself: in a supervised deployment this line
+			// ships the credential to the log aggregator on every start.
+			log.Printf("Generated a new API key (fingerprint %s); it is stored in the config file", config.KeyFingerprint(cfg.APIKey))
 			if configPath != "" {
 				config.Save(configPath, cfg)
 			}
@@ -74,7 +76,7 @@ var serveCmd = &cobra.Command{
 		}
 
 		// Setup webhook dispatcher
-		disp := webhook.New()
+		disp := webhook.NewWithPolicy(webhook.Policy{AllowPrivateTargets: cfg.AllowPrivateWebhookTargets})
 
 		webhooks, _ := s.GetWebhooks()
 		for _, wh := range webhooks {
@@ -158,7 +160,7 @@ var serveCmd = &cobra.Command{
 			c.Disconnect()
 		}()
 
-		log.Printf("API key: %s", cfg.APIKey)
+		log.Printf("API key fingerprint: %s", config.KeyFingerprint(cfg.APIKey))
 		if err := srv.Start(cfg.Server.Host, cfg.Server.Port); err != nil {
 			log.Printf("Server stopped: %v", err)
 		}

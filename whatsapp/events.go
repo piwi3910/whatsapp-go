@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"encoding/json"
+	"runtime/debug"
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -23,6 +24,16 @@ func (c *Client) RegisterEventHandler(handler func(models.Event)) {
 // all incoming events, stores messages, and dispatches to registered handlers.
 func (c *Client) SetupEventHandlers() {
 	c.wac.AddEventHandler(func(evt any) {
+		// whatsmeow calls this inline on its own goroutine, so an
+		// unrecovered panic here takes down the whole process — and in a
+		// supervised deployment, reconnects in a crash loop. Event mapping
+		// touches many optional protobuf fields, which is exactly where a
+		// nil deref hides.
+		defer func() {
+			if r := recover(); r != nil {
+				c.log.Errorf("panic handling %T event: %v\n%s", evt, r, debug.Stack())
+			}
+		}()
 		switch v := evt.(type) {
 		case *events.Message:
 			c.handleMessage(v)
@@ -133,7 +144,11 @@ func (c *Client) handleMessage(v *events.Message) {
 		msg.MediaKey = stk.GetMediaKey()
 	}
 
-	c.store.InsertMessage(msg)
+	// Never swallow this: a failure here means the message is not persisted
+	// and consumers polling Events will never see it.
+	if err := c.store.InsertMessage(msg); err != nil {
+		c.log.Errorf("storing inbound message %s from %s: %v", msg.ID, msg.SenderJID, err)
+	}
 
 	// Determine event type — reactions and deletions get their own event types
 	eventType := models.EventMessageReceived
@@ -156,7 +171,9 @@ func (c *Client) handleReceipt(v *events.Receipt) {
 	if v.Type == "read" {
 		for _, id := range v.MessageIDs {
 			localID := jid.CompositeMessageID(v.Chat.String(), v.Sender.String(), id)
-			c.store.UpdateReadStatus(localID, true)
+			if err := c.store.UpdateReadStatus(localID, true); err != nil {
+				c.log.Warnf("updating read status for %s: %v", localID, err)
+			}
 		}
 		payload, _ := json.Marshal(map[string]any{
 			"chat_jid":    v.Chat.String(),
@@ -228,8 +245,13 @@ func (c *Client) handleGroupEvent(v *events.GroupInfo) {
 }
 
 func (c *Client) dispatch(evt models.Event) {
-	// Store event in DB
-	c.store.InsertEvent(&evt)
+	// Store first, then fan out: the durable log is what a restarting
+	// consumer replays, so a handler panic must not cost us the record.
+	// A failure here is the difference between a consumer seeing this
+	// event and never knowing it happened — say so loudly.
+	if err := c.store.InsertEvent(&evt); err != nil {
+		c.log.Errorf("storing %s event: %v", evt.Type, err)
+	}
 
 	// Fan out to registered handlers (read lock since handlers are append-only)
 	c.mu.RLock()
@@ -237,7 +259,16 @@ func (c *Client) dispatch(evt models.Event) {
 	c.mu.RUnlock()
 
 	for _, h := range handlers {
-		h(evt)
+		// One misbehaving handler must not kill the event loop or starve
+		// the handlers registered after it.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.log.Errorf("panic in %s event handler: %v\n%s", evt.Type, r, debug.Stack())
+				}
+			}()
+			h(evt)
+		}()
 	}
 }
 

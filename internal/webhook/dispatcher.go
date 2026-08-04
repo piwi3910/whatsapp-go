@@ -19,17 +19,29 @@ type Dispatcher struct {
 	mu       sync.RWMutex
 	webhooks map[string]models.Webhook
 	client   *http.Client
+	policy   Policy
 }
 
-// New creates a new Dispatcher.
+// New creates a Dispatcher that refuses loopback and private targets — the
+// safe default for a server that may be internet-reachable. Use
+// NewWithPolicy when the receiver is deliberately on a private network.
 func New() *Dispatcher {
+	return NewWithPolicy(Policy{})
+}
+
+// NewWithPolicy creates a Dispatcher whose outbound requests are governed by
+// p, both at registration (Policy.ValidateURL) and at dial time.
+func NewWithPolicy(p Policy) *Dispatcher {
 	return &Dispatcher{
 		webhooks: make(map[string]models.Webhook),
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		policy:   p,
+		client:   newSafeClient(10*time.Second, p),
 	}
 }
+
+// Policy returns the dispatcher's target policy, so callers validating a URL
+// before registering it apply exactly the rules the dispatcher enforces.
+func (d *Dispatcher) Policy() Policy { return d.policy }
 
 // Register adds a webhook.
 func (d *Dispatcher) Register(wh models.Webhook) {
