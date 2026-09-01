@@ -181,9 +181,10 @@ func (c *Client) IsLoggedIn() bool {
 }
 
 // OnEvent registers a handler invoked for every event (inbound messages,
-// receipts, connection changes). Handlers run on the whatsmeow event
-// goroutine: keep them fast and non-blocking, and do not call back into
-// Client methods that send, or you risk stalling event delivery.
+// receipts, connection changes). Handlers run on the client's event worker
+// goroutine, in event order — not on the whatsmeow event loop — so they may
+// do I/O, but must not deadlock waiting on more events or call back into
+// Client methods that send.
 //
 // A handler that panics is recovered and logged rather than taking down
 // the process. For delivery that survives restarts, use Events instead.

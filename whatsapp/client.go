@@ -73,10 +73,19 @@ type Client struct {
 	loginInFlight bool
 
 	// done is closed by Close and unblocks any goroutine this client owns
-	// (notably the QR bridge), so shutting a Client down can never leave a
-	// producer parked on a channel send forever.
+	// (notably the QR bridge and the event worker), so shutting a Client
+	// down can never leave a producer parked on a channel send forever.
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// eventQueue decouples the whatsmeow event loop from SQLite and handler
+	// fan-out (issue #26): dispatch enqueues, a single worker stores and
+	// delivers in order. One worker keeps event ordering; the bounded
+	// buffer keeps a stalled store from stalling the protocol.
+	eventQueue chan models.Event
+	eventOnce  sync.Once
+	// eventDropped counts events lost to a full queue; visible to tests.
+	eventDropped int64
 }
 
 // New creates a new Client. dbPath is the SQLite database path for whatsmeow's
@@ -98,10 +107,11 @@ func New(appStore *appstore.Store, dbPath string, log waLog.Logger) (*Client, er
 
 	wac := whatsmeow.NewClient(deviceStore, log)
 	c := &Client{
-		wac:   wac,
-		store: appStore,
-		log:   log,
-		done:  make(chan struct{}),
+		wac:        wac,
+		store:      appStore,
+		log:        log,
+		done:       make(chan struct{}),
+		eventQueue: make(chan models.Event, eventQueueSize),
 	}
 
 	// Seed the identity snapshot before anything can run concurrently, then

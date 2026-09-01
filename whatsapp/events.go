@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"encoding/json"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -15,6 +16,9 @@ import (
 )
 
 // RegisterEventHandler registers a handler that receives mapped events.
+// Handlers run on the client's event worker goroutine, in event order —
+// not on the whatsmeow event loop — so they may do I/O, but must not
+// deadlock waiting on more events.
 func (c *Client) RegisterEventHandler(handler func(models.Event)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -23,7 +27,10 @@ func (c *Client) RegisterEventHandler(handler func(models.Event)) {
 
 // SetupEventHandlers registers the whatsmeow event handler that processes
 // all incoming events, stores messages, and dispatches to registered handlers.
+// It also starts the event worker that owns the durable-log write and the
+// handler fan-out (issue #26).
 func (c *Client) SetupEventHandlers() {
+	c.startEventWorker()
 	c.wac.AddEventHandler(func(evt any) {
 		// whatsmeow calls this inline on its own goroutine, so an
 		// unrecovered panic here takes down the whole process — and in a
@@ -119,6 +126,14 @@ func (c *Client) handleMessage(v *events.Message) {
 
 	populateMediaMetadata(msg, v.Message)
 
+	// debt (issue #26): the event log and handler fan-out run on the event
+	// worker, but this message insert stays on the whatsmeow event loop on
+	// purpose — a consumer that reads /events may query the message row the
+	// event points at, so the row must exist by the time the event is
+	// delivered. Ceiling: one synchronous WAL write per inbound message.
+	// Revisit condition: this write stalls the loop under load, which needs
+	// a message queue ahead of the event queue (preserving order).
+	//
 	// Never swallow this: a failure here means the message is not persisted
 	// and consumers polling Events will never see it.
 	if err := c.store.InsertMessage(msg); err != nil {
@@ -260,6 +275,60 @@ func (c *Client) dispatchGroupParticipants(v *events.GroupInfo, evtType string, 
 }
 
 func (c *Client) dispatch(evt models.Event) {
+	// Enqueue; the event worker (one goroutine, in order) does the durable
+	// insert and the handler fan-out. Never block the whatsmeow loop on
+	// SQLite or on a slow handler (issue #26).
+	//
+	// debt: when the queue is full the event is dropped and counted, not
+	// queued — ceiling: eventQueueSize buffered events on a saturated store.
+	// Revisit condition: consumers start relying on at-most-once becoming
+	// at-least-once (i.e. retention guarantees), which needs a persisted
+	// spool instead of an in-memory queue.
+	select {
+	case c.eventQueue <- evt:
+	default:
+		atomic.AddInt64(&c.eventDropped, 1)
+		if c.eventDropped%1000 == 1 {
+			c.log.Errorf("event queue full, dropping %s event (%d dropped total)", evt.Type, c.eventDropped)
+		}
+	}
+}
+
+// eventQueueSize bounds the in-memory event buffer behind the whatsmeow
+// event loop.
+const eventQueueSize = 4096
+
+// startEventWorker starts the single goroutine that drains eventQueue.
+func (c *Client) startEventWorker() {
+	c.eventOnce.Do(func() {
+		go c.eventWorker()
+	})
+}
+
+// eventWorker stores and delivers queued events in order. When the client
+// is closed it drains whatever is already queued before exiting, so events
+// that reached the queue survive the shutdown race.
+func (c *Client) eventWorker() {
+	for {
+		select {
+		case evt := <-c.eventQueue:
+			c.deliverEvent(evt)
+		case <-c.done:
+			for {
+				select {
+				case evt := <-c.eventQueue:
+					c.deliverEvent(evt)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// deliverEvent performs the work dispatch used to do inline: the durable log
+// write first, then the handler fan-out.
+func (c *Client) deliverEvent(evt models.Event) {
 	// Store first, then fan out: the durable log is what a restarting
 	// consumer replays, so a handler panic must not cost us the record.
 	// A failure here is the difference between a consumer seeing this

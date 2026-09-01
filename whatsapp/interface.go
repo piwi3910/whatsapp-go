@@ -78,4 +78,5 @@ type ConnectionStatus struct {
 type QREvent struct {
 	Code string // QR code string for display
 	Done bool   // true when login is complete
+	Err  error  // non-nil when Done caused by a pairing error (issue #7)
 }

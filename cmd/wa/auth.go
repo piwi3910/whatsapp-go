@@ -12,6 +12,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/piwi3910/whatsapp-go/internal/config"
+	"github.com/piwi3910/whatsapp-go/internal/lockfile"
 	"github.com/piwi3910/whatsapp-go/internal/pidfile"
 	"github.com/piwi3910/whatsapp-go/internal/store"
 	"github.com/piwi3910/whatsapp-go/whatsapp"
@@ -30,9 +31,20 @@ func newClient() (whatsapp.Service, *store.Store, func()) {
 		return proxy, nil, func() {} // no cleanup needed
 	}
 
-	// No server running — direct connection
+	// No server running — direct connection.
+	//
+	// Two live connections from one device are not a thing WhatsApp allows,
+	// so the direct path takes a process lock: a second CLI invocation gets
+	// a clear "already in use" error instead of silently kicking the first
+	// one off the phone (issue #22).
+	lockPath := filepath.Join(filepath.Dir(cfg.Database.Path), "wa.lock")
+	if err := lockfile.Acquire(lockPath); err != nil {
+		exitError(err.Error(), 4)
+	}
+
 	s, err := store.New(cfg.Database.Path)
 	if err != nil {
+		lockfile.Remove(lockPath)
 		exitError(fmt.Sprintf("opening database: %v", err), 1)
 	}
 
@@ -41,12 +53,14 @@ func newClient() (whatsapp.Service, *store.Store, func()) {
 	c, err := whatsapp.New(s, waDBPath, log)
 	if err != nil {
 		s.Close()
+		lockfile.Remove(lockPath)
 		exitError(fmt.Sprintf("creating client: %v", err), 1)
 	}
 
 	cleanup := func() {
 		c.Disconnect()
 		s.Close()
+		lockfile.Remove(lockPath)
 	}
 	return c, s, cleanup
 }
@@ -57,6 +71,13 @@ var loginCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// For login, we need the store but handle the client lifecycle manually
 		// because we must keep the connection alive until pairing completes.
+		// Pairing also opens a live connection, so it takes the same lock.
+		lockPath := filepath.Join(filepath.Dir(cfg.Database.Path), "wa.lock")
+		if err := lockfile.Acquire(lockPath); err != nil {
+			exitError(err.Error(), 4)
+		}
+		defer lockfile.Remove(lockPath)
+
 		s, err := store.New(cfg.Database.Path)
 		if err != nil {
 			exitError(fmt.Sprintf("opening database: %v", err), 1)
@@ -79,6 +100,14 @@ var loginCmd = &cobra.Command{
 		fmt.Println()
 		for evt := range qrChan {
 			if evt.Done {
+				if evt.Err != nil {
+					// Pairing failed (wrong phone, device limit, etc.) — say so
+					// instead of announcing success (issue #7).
+					fmt.Fprintf(os.Stderr, "\nPairing failed: %v\n", evt.Err)
+					fmt.Println("Run `wa login` again to try another QR code.")
+					c.Disconnect()
+					return
+				}
 				fmt.Println("\nQR scanned! Completing pairing...")
 				// Wait for whatsmeow to fully connect (handshake, key exchange, device storage)
 				if c.WaitForConnection(30 * time.Second) {

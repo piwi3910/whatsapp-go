@@ -46,6 +46,7 @@ type Server struct {
 	store      *store.Store
 	dispatcher *webhook.Dispatcher
 	apiKey     string
+	login      *loginState
 	startTime  time.Time
 	version    string
 
@@ -64,6 +65,7 @@ func NewServer(svc whatsapp.Service, st *store.Store, disp *webhook.Dispatcher, 
 		store:      st,
 		dispatcher: disp,
 		apiKey:     apiKey,
+		login:      &loginState{},
 		version:    version,
 		startTime:  time.Now(),
 	}
@@ -105,6 +107,7 @@ func NewServer(svc whatsapp.Service, st *store.Store, disp *webhook.Dispatcher, 
 
 		// Auth
 		r.Post("/api/v1/auth/login", s.handleLogin)
+		r.Get("/api/v1/auth/login", s.handleLoginStatus)
 		r.Post("/api/v1/auth/logout", s.handleLogout)
 		r.Get("/api/v1/auth/status", s.handleAuthStatus)
 
