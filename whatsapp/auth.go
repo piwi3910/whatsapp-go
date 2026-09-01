@@ -129,6 +129,14 @@ func mapQRItem(item whatsmeow.QRChannelItem) (QREvent, bool) {
 	switch item.Event {
 	case "code":
 		return QREvent{Code: item.Code}, true
+	case "error":
+		// Pairing failed (wrong phone, device limit, etc.): the channel is
+		// done, and the reason must not be swallowed (issue #7).
+		err := item.Error
+		if err == nil {
+			err = errors.New("pairing error")
+		}
+		return QREvent{Done: true, Err: err}, true
 	case "success", "timeout":
 		return QREvent{Done: true}, true
 	default:

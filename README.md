@@ -186,38 +186,39 @@ All endpoints require `Authorization: Bearer <api-key>` (except health).
 
 ### Endpoints
 
-| Method   | Path                                       | Description                       |
-| -------- | ------------------------------------------ | --------------------------------- |
-| `GET`    | `/api/v1/health`                           | Health check (no auth)            |
-| `POST`   | `/api/v1/auth/login`                       | QR code login                     |
-| `POST`   | `/api/v1/auth/logout`                      | Logout                            |
-| `GET`    | `/api/v1/auth/status`                      | Connection status                 |
-| `POST`   | `/api/v1/messages/send`                    | Send message (JSON or multipart)  |
-| `GET`    | `/api/v1/messages?jid=...`                 | List messages (cursor pagination) |
-| `GET`    | `/api/v1/messages/:id`                     | Get message                       |
-| `DELETE` | `/api/v1/messages/:id`                     | Delete message                    |
-| `POST`   | `/api/v1/messages/:id/react`               | React to message                  |
-| `POST`   | `/api/v1/messages/:id/read`                | Mark as read                      |
-| `POST`   | `/api/v1/groups`                           | Create group                      |
-| `GET`    | `/api/v1/groups`                           | List groups                       |
-| `GET`    | `/api/v1/groups/:jid`                      | Group info                        |
-| `POST`   | `/api/v1/groups/:jid/leave`                | Leave group                       |
-| `GET`    | `/api/v1/groups/:jid/invite-link`          | Get invite link                   |
-| `POST`   | `/api/v1/groups/join`                      | Join via link                     |
-| `POST`   | `/api/v1/groups/:jid/participants/add`     | Add members                       |
-| `POST`   | `/api/v1/groups/:jid/participants/remove`  | Remove members                    |
-| `POST`   | `/api/v1/groups/:jid/participants/promote` | Promote to admin                  |
-| `POST`   | `/api/v1/groups/:jid/participants/demote`  | Demote from admin                 |
-| `GET`    | `/api/v1/contacts`                         | List contacts                     |
-| `GET`    | `/api/v1/contacts/:jid`                    | Contact info                      |
-| `POST`   | `/api/v1/contacts/:jid/block`              | Block                             |
-| `POST`   | `/api/v1/contacts/:jid/unblock`            | Unblock                           |
-| `POST`   | `/api/v1/media/upload`                     | Upload media (multipart)          |
-| `GET`    | `/api/v1/media/:message-id`                | Download media                    |
-| `POST`   | `/api/v1/webhooks`                         | Register webhook                  |
-| `GET`    | `/api/v1/webhooks`                         | List webhooks                     |
-| `DELETE` | `/api/v1/webhooks/:id`                     | Delete webhook                    |
-| `GET`    | `/api/v1/events?after=0&limit=50`          | Poll events (cursor-based)        |
+| Method   | Path                                       | Description                                                                           |
+| -------- | ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `GET`    | `/api/v1/health`                           | Health check (no auth)                                                                |
+| `POST`   | `/api/v1/auth/login`                       | QR code login (returns first QR; re-issued codes and the outcome are tracked)         |
+| `GET`    | `/api/v1/auth/login`                       | Poll the in-progress pairing attempt (current QR code, attempt count, terminal state) |
+| `POST`   | `/api/v1/auth/logout`                      | Logout                                                                                |
+| `GET`    | `/api/v1/auth/status`                      | Connection status                                                                     |
+| `POST`   | `/api/v1/messages/send`                    | Send message (JSON or multipart)                                                      |
+| `GET`    | `/api/v1/messages?jid=...`                 | List messages (cursor pagination)                                                     |
+| `GET`    | `/api/v1/messages/:id`                     | Get message                                                                           |
+| `DELETE` | `/api/v1/messages/:id`                     | Delete message                                                                        |
+| `POST`   | `/api/v1/messages/:id/react`               | React to message                                                                      |
+| `POST`   | `/api/v1/messages/:id/read`                | Mark as read                                                                          |
+| `POST`   | `/api/v1/groups`                           | Create group                                                                          |
+| `GET`    | `/api/v1/groups`                           | List groups                                                                           |
+| `GET`    | `/api/v1/groups/:jid`                      | Group info                                                                            |
+| `POST`   | `/api/v1/groups/:jid/leave`                | Leave group                                                                           |
+| `GET`    | `/api/v1/groups/:jid/invite-link`          | Get invite link                                                                       |
+| `POST`   | `/api/v1/groups/join`                      | Join via link                                                                         |
+| `POST`   | `/api/v1/groups/:jid/participants/add`     | Add members                                                                           |
+| `POST`   | `/api/v1/groups/:jid/participants/remove`  | Remove members                                                                        |
+| `POST`   | `/api/v1/groups/:jid/participants/promote` | Promote to admin                                                                      |
+| `POST`   | `/api/v1/groups/:jid/participants/demote`  | Demote from admin                                                                     |
+| `GET`    | `/api/v1/contacts`                         | List contacts                                                                         |
+| `GET`    | `/api/v1/contacts/:jid`                    | Contact info                                                                          |
+| `POST`   | `/api/v1/contacts/:jid/block`              | Block                                                                                 |
+| `POST`   | `/api/v1/contacts/:jid/unblock`            | Unblock                                                                               |
+| `POST`   | `/api/v1/media/upload`                     | Upload media (multipart)                                                              |
+| `GET`    | `/api/v1/media/:message-id`                | Download media                                                                        |
+| `POST`   | `/api/v1/webhooks`                         | Register webhook                                                                      |
+| `GET`    | `/api/v1/webhooks`                         | List webhooks                                                                         |
+| `DELETE` | `/api/v1/webhooks/:id`                     | Delete webhook                                                                        |
+| `GET`    | `/api/v1/events?after=0&limit=50`          | Poll events (cursor-based)                                                            |
 
 ### Consuming events reliably
 
@@ -367,7 +368,7 @@ Metrics in Prometheus text format at `/metrics`.
 
 ### Webhook targets and SSRF
 
-Webhook URLs are supplied by API callers and the server POSTs to them
+Webhook URLs are supplied by API callers and the server POSTS to them
 unattended, so by default it refuses targets that resolve to **loopback or
 private** addresses — otherwise anyone able to register a webhook could aim
 the server at services on its own network. Addresses that reach
@@ -415,12 +416,13 @@ who can call the API.
 
 ## Exit Codes
 
-| Code | Meaning              |
-| ---- | -------------------- |
-| 0    | Success              |
-| 1    | General error        |
-| 2    | Authentication error |
-| 3    | Not found            |
+| Code | Meaning                                                      |
+| ---- | ------------------------------------------------------------ |
+| 0    | Success                                                      |
+| 1    | General error                                                |
+| 2    | Authentication error                                         |
+| 3    | Not found                                                    |
+| 4    | Resource in use (another `wa` process holds the device lock) |
 
 ## License
 
