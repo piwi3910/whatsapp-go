@@ -160,11 +160,11 @@ Types you need (`Message`, `Event`, `Contact`, `Group`, `SendResponse`) are expo
 
 Two options:
 
-| | `OnEvent` | `Events` |
-|---|---|---|
-| delivery | push, in-process | pull, cursor-based |
-| survives restart | no | yes |
-| use when | you react live and can afford to miss events while down | you must not miss messages across your own downtime |
+|                  | `OnEvent`                                               | `Events`                                            |
+| ---------------- | ------------------------------------------------------- | --------------------------------------------------- |
+| delivery         | push, in-process                                        | pull, cursor-based                                  |
+| survives restart | no                                                      | yes                                                 |
+| use when         | you react live and can afford to miss events while down | you must not miss messages across your own downtime |
 
 `Events(ctx, after, limit)` returns log entries with ID greater than `after`. Persist the last ID you handled and resume from it. **Delivery is at-least-once** — the same WhatsApp message can reappear after a reconnect or history sync, so deduplicate on the message ID in the payload.
 
@@ -186,38 +186,38 @@ All endpoints require `Authorization: Bearer <api-key>` (except health).
 
 ### Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/health` | Health check (no auth) |
-| `POST` | `/api/v1/auth/login` | QR code login |
-| `POST` | `/api/v1/auth/logout` | Logout |
-| `GET` | `/api/v1/auth/status` | Connection status |
-| `POST` | `/api/v1/messages/send` | Send message (JSON or multipart) |
-| `GET` | `/api/v1/messages?jid=...` | List messages (cursor pagination) |
-| `GET` | `/api/v1/messages/:id` | Get message |
-| `DELETE` | `/api/v1/messages/:id` | Delete message |
-| `POST` | `/api/v1/messages/:id/react` | React to message |
-| `POST` | `/api/v1/messages/:id/read` | Mark as read |
-| `POST` | `/api/v1/groups` | Create group |
-| `GET` | `/api/v1/groups` | List groups |
-| `GET` | `/api/v1/groups/:jid` | Group info |
-| `POST` | `/api/v1/groups/:jid/leave` | Leave group |
-| `GET` | `/api/v1/groups/:jid/invite-link` | Get invite link |
-| `POST` | `/api/v1/groups/join` | Join via link |
-| `POST` | `/api/v1/groups/:jid/participants/add` | Add members |
-| `POST` | `/api/v1/groups/:jid/participants/remove` | Remove members |
-| `POST` | `/api/v1/groups/:jid/participants/promote` | Promote to admin |
-| `POST` | `/api/v1/groups/:jid/participants/demote` | Demote from admin |
-| `GET` | `/api/v1/contacts` | List contacts |
-| `GET` | `/api/v1/contacts/:jid` | Contact info |
-| `POST` | `/api/v1/contacts/:jid/block` | Block |
-| `POST` | `/api/v1/contacts/:jid/unblock` | Unblock |
-| `POST` | `/api/v1/media/upload` | Upload media (multipart) |
-| `GET` | `/api/v1/media/:message-id` | Download media |
-| `POST` | `/api/v1/webhooks` | Register webhook |
-| `GET` | `/api/v1/webhooks` | List webhooks |
-| `DELETE` | `/api/v1/webhooks/:id` | Delete webhook |
-| `GET` | `/api/v1/events?after=0&limit=50` | Poll events (cursor-based) |
+| Method   | Path                                       | Description                       |
+| -------- | ------------------------------------------ | --------------------------------- |
+| `GET`    | `/api/v1/health`                           | Health check (no auth)            |
+| `POST`   | `/api/v1/auth/login`                       | QR code login                     |
+| `POST`   | `/api/v1/auth/logout`                      | Logout                            |
+| `GET`    | `/api/v1/auth/status`                      | Connection status                 |
+| `POST`   | `/api/v1/messages/send`                    | Send message (JSON or multipart)  |
+| `GET`    | `/api/v1/messages?jid=...`                 | List messages (cursor pagination) |
+| `GET`    | `/api/v1/messages/:id`                     | Get message                       |
+| `DELETE` | `/api/v1/messages/:id`                     | Delete message                    |
+| `POST`   | `/api/v1/messages/:id/react`               | React to message                  |
+| `POST`   | `/api/v1/messages/:id/read`                | Mark as read                      |
+| `POST`   | `/api/v1/groups`                           | Create group                      |
+| `GET`    | `/api/v1/groups`                           | List groups                       |
+| `GET`    | `/api/v1/groups/:jid`                      | Group info                        |
+| `POST`   | `/api/v1/groups/:jid/leave`                | Leave group                       |
+| `GET`    | `/api/v1/groups/:jid/invite-link`          | Get invite link                   |
+| `POST`   | `/api/v1/groups/join`                      | Join via link                     |
+| `POST`   | `/api/v1/groups/:jid/participants/add`     | Add members                       |
+| `POST`   | `/api/v1/groups/:jid/participants/remove`  | Remove members                    |
+| `POST`   | `/api/v1/groups/:jid/participants/promote` | Promote to admin                  |
+| `POST`   | `/api/v1/groups/:jid/participants/demote`  | Demote from admin                 |
+| `GET`    | `/api/v1/contacts`                         | List contacts                     |
+| `GET`    | `/api/v1/contacts/:jid`                    | Contact info                      |
+| `POST`   | `/api/v1/contacts/:jid/block`              | Block                             |
+| `POST`   | `/api/v1/contacts/:jid/unblock`            | Unblock                           |
+| `POST`   | `/api/v1/media/upload`                     | Upload media (multipart)          |
+| `GET`    | `/api/v1/media/:message-id`                | Download media                    |
+| `POST`   | `/api/v1/webhooks`                         | Register webhook                  |
+| `GET`    | `/api/v1/webhooks`                         | List webhooks                     |
+| `DELETE` | `/api/v1/webhooks/:id`                     | Delete webhook                    |
+| `GET`    | `/api/v1/events?after=0&limit=50`          | Poll events (cursor-based)        |
 
 ### Consuming events reliably
 
@@ -254,6 +254,7 @@ receive messages. Persist the last event ID you processed and pass it as
 ### Sending Messages via API
 
 **JSON:**
+
 ```bash
 curl -X POST http://localhost:8080/api/v1/messages/send \
   -H "Authorization: Bearer wa_xxx" \
@@ -262,6 +263,7 @@ curl -X POST http://localhost:8080/api/v1/messages/send \
 ```
 
 **Media (two-step):**
+
 ```bash
 # 1. Upload
 curl -X POST http://localhost:8080/api/v1/media/upload \
@@ -277,6 +279,7 @@ curl -X POST http://localhost:8080/api/v1/messages/send \
 ```
 
 **Media (inline):**
+
 ```bash
 curl -X POST http://localhost:8080/api/v1/messages/send \
   -H "Authorization: Bearer wa_xxx" \
@@ -295,6 +298,7 @@ curl -X POST http://localhost:8080/api/v1/webhooks \
 ```
 
 Webhook payload:
+
 ```json
 {"event": "message.received", "timestamp": 1234567890, "data": { ... }}
 ```
@@ -313,32 +317,34 @@ its own**; pass `wa serve --write-config` if you want the current settings
 Config file: `~/.config/wa/config.yaml` (not created automatically).
 
 ```yaml
-api_key: "wa_xxxxxxxxxxxxx"     # Auto-generated, used for API auth
+api_key: "wa_xxxxxxxxxxxxx" # Auto-generated, used for API auth
 server:
   host: "localhost"
   port: 8080
-  max_upload_size: 104857600    # 100MB
+  max_upload_size: 104857600 # 100MB
+  tls_cert: "" # optional: with tls_key, the API serves HTTPS
+  tls_key: ""
 database:
   path: "~/.config/wa/wa.db"
 events:
-  max_buffer: 10000             # Max events in polling buffer
-webhooks: []                    # Pre-configured webhooks
+  max_buffer: 10000 # Max events in polling buffer
+webhooks: [] # Pre-configured webhooks
 allow_private_webhook_targets: false
 ```
 
 ### Environment variables
 
-| Variable | Overrides |
-|---|---|
-| `WA_API_KEY` | `api_key` |
-| `WA_HOST`, `WA_PORT` | `server.host`, `server.port` |
-| `WA_DB_PATH` | `database.path` |
-| `WA_MAX_UPLOAD_SIZE` | `server.max_upload_size` |
-| `WA_EVENTS_MAX_BUFFER` | `events.max_buffer` |
-| `WA_ALLOW_PRIVATE_WEBHOOK_TARGETS` | `allow_private_webhook_targets` |
-| `WA_RATE_LIMIT_RPS`, `WA_RATE_LIMIT_BURST` | API rate limit (`0` disables) |
-| `WA_CONTAINER` | container mode: bind `0.0.0.0`, DB under `/data`, skip the PID file, JSON logs |
-| `WA_LOG_FORMAT`, `WA_LOG_LEVEL` | log output |
+| Variable                                   | Overrides                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `WA_API_KEY`                               | `api_key`                                                                      |
+| `WA_HOST`, `WA_PORT`                       | `server.host`, `server.port`                                                   |
+| `WA_DB_PATH`                               | `database.path`                                                                |
+| `WA_MAX_UPLOAD_SIZE`                       | `server.max_upload_size`                                                       |
+| `WA_EVENTS_MAX_BUFFER`                     | `events.max_buffer`                                                            |
+| `WA_ALLOW_PRIVATE_WEBHOOK_TARGETS`         | `allow_private_webhook_targets`                                                |
+| `WA_RATE_LIMIT_RPS`, `WA_RATE_LIMIT_BURST` | API rate limit (`0` disables)                                                  |
+| `WA_CONTAINER`                             | container mode: bind `0.0.0.0`, DB under `/data`, skip the PID file, JSON logs |
+| `WA_LOG_FORMAT`, `WA_LOG_LEVEL`            | log output                                                                     |
 
 A malformed value is a startup error rather than a silently ignored setting.
 
@@ -409,12 +415,12 @@ who can call the API.
 
 ## Exit Codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Authentication error |
-| 3 | Not found |
+| Code | Meaning              |
+| ---- | -------------------- |
+| 0    | Success              |
+| 1    | General error        |
+| 2    | Authentication error |
+| 3    | Not found            |
 
 ## License
 

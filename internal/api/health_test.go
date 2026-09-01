@@ -148,7 +148,7 @@ func TestStopRacingStart(t *testing.T) {
 	s := NewServer(fakeService{state: "connected"}, nil, nil, "k", "test", 0)
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- s.Start("127.0.0.1", 0) }()
+	go func() { errCh <- s.Start("127.0.0.1", 0, "", "") }()
 	// No synchronisation on purpose: Stop may land before, during or after
 	// the listener comes up, which is exactly the SIGTERM-at-startup case.
 	if err := s.Stop(); err != nil {

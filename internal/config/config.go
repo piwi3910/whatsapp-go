@@ -71,6 +71,8 @@ type ServerConfig struct {
 	Host          string `yaml:"host"`
 	Port          int    `yaml:"port"`
 	MaxUploadSize int64  `yaml:"max_upload_size"`
+	TLSCert       string `yaml:"tls_cert"` // optional: with tls_key, the API serves HTTPS
+	TLSKey        string `yaml:"tls_key"`
 }
 
 // DatabaseConfig holds database settings.
