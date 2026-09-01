@@ -2,10 +2,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/piwi3910/whatsapp-go/internal/store"
 )
 
 var mediaOutput string
@@ -28,6 +31,10 @@ var mediaDownloadCmd = &cobra.Command{
 
 		data, mimeType, err := c.DownloadMedia(cmd.Context(), args[0])
 		if err != nil {
+			// Exit code 3 is "not found" per the CLI contract (spec).
+			if errors.Is(err, store.ErrNotFound) {
+				exitError(err.Error(), 3)
+			}
 			exitError(err.Error(), 1)
 		}
 

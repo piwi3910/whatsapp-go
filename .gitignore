@@ -1,1 +1,6 @@
 wa
+
+# procoder
+.procoder/state/
+.procoder/index/
+*.test

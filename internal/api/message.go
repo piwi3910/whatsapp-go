@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -131,6 +132,15 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, "message.send", err)
 		return
 	}
+
+	// Two-step flow: drop the temporary upload only now that the send
+	// succeeded, so a failed send keeps the file for a retry (issue #8).
+	if req.MediaID != "" {
+		if err := s.store.DeleteMediaUpload(req.MediaID); err != nil {
+			slog.Warn("deleting consumed media upload", "media_id", req.MediaID, "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -158,6 +168,10 @@ func writeMediaInputError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // getMediaData retrieves media bytes from either a media_id reference or multipart file upload.
+// getMediaData retrieves media bytes from either a media_id reference or multipart file upload.
+// It does NOT delete the referenced upload: the caller deletes it only after a
+// successful send, so a failed send leaves the file in place for a retry
+// (issue #8) and the TTL pruner handles the rest.
 func (s *Server) getMediaData(r *http.Request, req *models.SendRequest) ([]byte, string, error) {
 	// Two-step: media_id reference
 	if req.MediaID != "" {
@@ -165,7 +179,6 @@ func (s *Server) getMediaData(r *http.Request, req *models.SendRequest) ([]byte,
 		if err != nil {
 			return nil, "", err
 		}
-		s.store.DeleteMediaUpload(req.MediaID)
 		fname := upload.Filename
 		if fname == "" && req.Filename != "" {
 			fname = req.Filename

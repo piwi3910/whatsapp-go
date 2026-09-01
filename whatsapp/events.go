@@ -228,60 +228,35 @@ func populateMediaMetadata(dst *models.Message, msg *waE2E.Message) {
 }
 
 func (c *Client) handleGroupEvent(v *events.GroupInfo) {
-	if len(v.Join) > 0 {
-		jids := make([]string, len(v.Join))
-		for i, j := range v.Join {
-			jids[i] = j.String()
-		}
-		payload, _ := json.Marshal(map[string]any{
-			"group_jid": v.JID.String(), "participants": jids,
-		})
-		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantAdded, Payload: payload, Timestamp: v.Timestamp.Unix(),
-		})
-	}
-	if len(v.Leave) > 0 {
-		jids := make([]string, len(v.Leave))
-		for i, j := range v.Leave {
-			jids[i] = j.String()
-		}
-		payload, _ := json.Marshal(map[string]any{
-			"group_jid": v.JID.String(), "participants": jids,
-		})
-		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantRemoved, Payload: payload, Timestamp: v.Timestamp.Unix(),
-		})
-	}
-	if len(v.Promote) > 0 {
-		jids := make([]string, len(v.Promote))
-		for i, j := range v.Promote {
-			jids[i] = j.String()
-		}
-		payload, _ := json.Marshal(map[string]any{
-			"group_jid": v.JID.String(), "participants": jids,
-		})
-		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantPromoted, Payload: payload, Timestamp: v.Timestamp.Unix(),
-		})
-	}
-	if len(v.Demote) > 0 {
-		jids := make([]string, len(v.Demote))
-		for i, j := range v.Demote {
-			jids[i] = j.String()
-		}
-		payload, _ := json.Marshal(map[string]any{
-			"group_jid": v.JID.String(), "participants": jids,
-		})
-		c.dispatch(models.Event{
-			Type: models.EventGroupParticipantDemoted, Payload: payload, Timestamp: v.Timestamp.Unix(),
-		})
-	}
+	c.dispatchGroupParticipants(v, models.EventGroupParticipantAdded, v.Join)
+	c.dispatchGroupParticipants(v, models.EventGroupParticipantRemoved, v.Leave)
+	c.dispatchGroupParticipants(v, models.EventGroupParticipantPromoted, v.Promote)
+	c.dispatchGroupParticipants(v, models.EventGroupParticipantDemoted, v.Demote)
+
 	if v.Name != nil || v.Topic != nil {
 		payload, _ := json.Marshal(map[string]string{"group_jid": v.JID.String()})
 		c.dispatch(models.Event{
 			Type: models.EventGroupUpdated, Payload: payload, Timestamp: v.Timestamp.Unix(),
 		})
 	}
+}
+
+// dispatchGroupParticipants emits one group-participant event for a non-empty
+// JID list (join/leave/promote/demote all share this shape).
+func (c *Client) dispatchGroupParticipants(v *events.GroupInfo, evtType string, list []types.JID) {
+	if len(list) == 0 {
+		return
+	}
+	jids := make([]string, len(list))
+	for i, j := range list {
+		jids[i] = j.String()
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"group_jid": v.JID.String(), "participants": jids,
+	})
+	c.dispatch(models.Event{
+		Type: evtType, Payload: payload, Timestamp: v.Timestamp.Unix(),
+	})
 }
 
 func (c *Client) dispatch(evt models.Event) {

@@ -241,7 +241,7 @@ var serveCmd = &cobra.Command{
 			"host", cfg.Server.Host, "port", cfg.Server.Port,
 			"api_key_fingerprint", config.KeyFingerprint(cfg.APIKey),
 			"container", inContainer, "db", cfg.Database.Path)
-		if err := srv.Start(cfg.Server.Host, cfg.Server.Port); err != nil {
+		if err := srv.Start(cfg.Server.Host, cfg.Server.Port, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {
 			log.Info("server stopped", "reason", err)
 		}
 

@@ -31,6 +31,7 @@ type stubService struct {
 
 	state         string
 	sendText      func(ctx context.Context, jid, text string) (*models.SendResponse, error)
+	sendImage     func(ctx context.Context, jid string, data []byte, filename, caption string) (*models.SendResponse, error)
 	getMessage    func(ctx context.Context, id string) (*models.Message, error)
 	deleteMessage func(ctx context.Context, id string, forEveryone bool) error
 	sendReaction  func(ctx context.Context, id, emoji string) error
@@ -45,6 +46,10 @@ func (s *stubService) Status() whatsapp.ConnectionStatus {
 
 func (s *stubService) SendText(ctx context.Context, jid, text string) (*models.SendResponse, error) {
 	return s.sendText(ctx, jid, text)
+}
+
+func (s *stubService) SendImage(ctx context.Context, jid string, data []byte, filename, caption string) (*models.SendResponse, error) {
+	return s.sendImage(ctx, jid, data, filename, caption)
 }
 
 func (s *stubService) GetMessage(ctx context.Context, id string) (*models.Message, error) {
@@ -105,7 +110,62 @@ func do(s *Server, r *http.Request) *httptest.ResponseRecorder {
 }
 
 // ---------------------------------------------------------------------------
-// M7 — error mapping
+// Two-step media flow: the upload is deleted only after a successful send,
+// so a failed send leaves the file in place for a retry (issue #8).
+// ---------------------------------------------------------------------------
+
+func TestTwoStepMediaDeletedOnlyAfterSuccessfulSend(t *testing.T) {
+	seedUpload := func(s *Server, id string) {
+		t.Helper()
+		if err := s.store.InsertMediaUpload(&models.MediaUpload{
+			ID: id, MimeType: "image/png", Filename: "x.png",
+			Size: 2, Data: []byte("ok"),
+			CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),
+		}); err != nil {
+			t.Fatalf("seeding upload: %v", err)
+		}
+	}
+
+	t.Run("successful send consumes the upload", func(t *testing.T) {
+		stub := &stubService{}
+		stub.sendImage = func(ctx context.Context, jid string, data []byte, filename, caption string) (*models.SendResponse, error) {
+			if string(data) != "ok" {
+				t.Fatalf("send got %q, want the uploaded bytes", data)
+			}
+			return &models.SendResponse{MessageID: "m1", Timestamp: time.Now().Unix()}, nil
+		}
+		s := testServer(t, stub)
+		seedUpload(s, "med_1")
+
+		rec := do(s, authRequest("POST", "/api/v1/messages/send",
+			[]byte(`{"to":"1234567890@s.whatsapp.net","type":"image","media_id":"med_1"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		if _, err := s.store.GetMediaUpload("med_1"); err != store.ErrNotFound {
+			t.Fatalf("upload should be deleted after successful send, got err=%v", err)
+		}
+	})
+
+	t.Run("failed send keeps the upload for retry", func(t *testing.T) {
+		stub := &stubService{}
+		stub.sendImage = func(ctx context.Context, jid string, data []byte, filename, caption string) (*models.SendResponse, error) {
+			return nil, fmt.Errorf("device not connected")
+		}
+		s := testServer(t, stub)
+		seedUpload(s, "med_2")
+
+		rec := do(s, authRequest("POST", "/api/v1/messages/send",
+			[]byte(`{"to":"1234567890@s.whatsapp.net","type":"image","media_id":"med_2"}`)))
+		if rec.Code == http.StatusOK {
+			t.Fatalf("expected a failure, got 200")
+		}
+		if _, err := s.store.GetMediaUpload("med_2"); err != nil {
+			t.Fatalf("upload must survive a failed send, got err=%v", err)
+		}
+	})
+}
+
 // ---------------------------------------------------------------------------
 
 // The point of the mapping is that a client can decide whether to retry, so

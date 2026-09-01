@@ -162,8 +162,15 @@ func NewServer(svc whatsapp.Service, st *store.Store, disp *webhook.Dispatcher, 
 }
 
 // Start begins listening. Blocks until the server is stopped.
-func (s *Server) Start(host string, port int) error {
+// Start begins listening. Blocks until the server is stopped.
+// When tlsCert and tlsKey are both non-empty the server serves TLS
+// (issue #25); otherwise plain HTTP.
+func (s *Server) Start(host string, port int, tlsCert, tlsKey string) error {
 	addr := fmt.Sprintf("%s:%d", host, port)
+	if tlsCert != "" && tlsKey != "" {
+		slog.Info("api server listening (TLS)", "addr", addr, "version", s.version)
+		return s.httpServer.ListenAndServeTLS(tlsCert, tlsKey)
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
