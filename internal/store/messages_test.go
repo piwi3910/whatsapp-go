@@ -357,3 +357,55 @@ func TestInsertMessage_RedeliveryUpsert(t *testing.T) {
 		}
 	})
 }
+
+func TestGetOldestAndCount(t *testing.T) {
+	s := newTestStore(t)
+
+	mk := func(id, chat, waID string, ts int64, fromMe bool) *models.Message {
+		return &models.Message{
+			ID: id, ChatJID: chat, SenderJID: "sender@s.whatsapp.net",
+			WaID: waID, Type: "text", Content: "x", Timestamp: ts, IsFromMe: fromMe,
+		}
+	}
+	// Interleaved timestamps across two chats; oldest of the target chat
+	// is ts=100, and the other chat must not leak in.
+	for _, m := range []*models.Message{
+		mk("a", "chatA@s.whatsapp.net", "wa-a", 1000, false),
+		mk("b", "chatA@s.whatsapp.net", "wa-b", 300, true),
+		mk("c", "chatA@s.whatsapp.net", "wa-c", 100, false),
+		mk("d", "chatB@s.whatsapp.net", "wa-d", 50, false),
+	} {
+		if err := s.InsertMessage(m); err != nil {
+			t.Fatalf("InsertMessage(%s): %v", m.ID, err)
+		}
+	}
+
+	oldest, err := s.GetOldest("chatA@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("GetOldest: %v", err)
+	}
+	if oldest == nil || oldest.ID != "c" {
+		t.Fatalf("oldest = %+v, want id c", oldest)
+	}
+	if oldest.IsFromMe {
+		t.Errorf("oldest.IsFromMe = true, want false (wa-c)")
+	}
+
+	n, err := s.CountMessages("chatA@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("CountMessages: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("CountMessages(chatA) = %d, want 3", n)
+	}
+
+	// An empty chat yields a nil anchor and a zero count, not an error.
+	empty, err := s.GetOldest("nobody@s.whatsapp.net")
+	if err != nil || empty != nil {
+		t.Errorf("GetOldest(empty) = (%v, %v), want (nil, nil)", empty, err)
+	}
+	zero, err := s.CountMessages("nobody@s.whatsapp.net")
+	if err != nil || zero != 0 {
+		t.Errorf("CountMessages(empty) = (%d, %v), want (0, nil)", zero, err)
+	}
+}

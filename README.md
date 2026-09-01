@@ -101,6 +101,16 @@ wa media download <message-id> [-o output-path]
 
 ```bash
 wa event listen [--types message.received,group.created]  # Stream NDJSON
+wa history sync <chat-jid> [--count 50]                   # Backfill past messages from the primary device
+```
+
+### Management
+
+```bash
+wa apikey show              # Show the configured API key
+wa apikey rotate            # Generate a new key and persist it
+wa apikey set <key>         # Persist a specific key
+wa version                  # Show version, commit, build date
 ```
 
 ### Global Flags
@@ -219,6 +229,7 @@ All endpoints require `Authorization: Bearer <api-key>` (except health).
 | `GET`    | `/api/v1/webhooks`                         | List webhooks                                                                         |
 | `DELETE` | `/api/v1/webhooks/:id`                     | Delete webhook                                                                        |
 | `GET`    | `/api/v1/events?after=0&limit=50`          | Poll events (cursor-based)                                                            |
+| `POST`   | `/api/v1/history/sync`                     | Backfill past messages for a chat from the primary device                             |
 
 ### Consuming events reliably
 
@@ -386,6 +397,23 @@ If your receiver is deliberately on a private network — an agent platform
 in the same Kubernetes cluster, a service on your LAN — set
 `allow_private_webhook_targets: true`. Only do this when you trust everyone
 who can call the API.
+
+## Running as a service
+
+`deploy/wa.service` is a systemd unit for running `wa serve` as a daemon
+(issue #23). Install it for the user that owns the WhatsApp session:
+
+```bash
+sudo cp deploy/wa.service /etc/systemd/system/
+sudo systemctl edit wa   # set User= (the session owner) and the binary path if needed
+sudo systemctl daemon-reload
+sudo systemctl enable --now wa
+journalctl -u wa -f      # logs
+```
+
+The session is file state, not process state: a crash or upgrade restarts
+from the last pairing. One process per linked account, same as the
+Kubernetes section.
 
 ## Architecture
 

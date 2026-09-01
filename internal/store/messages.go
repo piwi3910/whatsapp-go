@@ -91,6 +91,9 @@ type MessageCursor struct {
 // GetMessages returns up to limit messages for a chat, newest first,
 // strictly older than the before timestamp (0 for the newest page).
 //
+// GetMessages returns up to limit messages for a chat ordered newest
+// first, starting from messages with a timestamp before `before`.
+//
 // Prefer GetMessagesPage: this timestamp-only cursor cannot address rows
 // individually and drops messages that share the boundary second.
 func (s *Store) GetMessages(chatJID string, limit int, before int64) ([]models.Message, error) {
@@ -99,6 +102,45 @@ func (s *Store) GetMessages(chatJID string, limit int, before int64) ([]models.M
 		cur = &MessageCursor{Timestamp: before}
 	}
 	return s.GetMessagesPage(chatJID, limit, cur)
+}
+
+// GetOldest returns the oldest stored message of a chat, or nil when the
+// chat has no stored messages. History backfill walks backwards from the
+// oldest known message (issue #21), so this is its anchor.
+func (s *Store) GetOldest(chatJID string) (*models.Message, error) {
+	row := s.db.QueryRow(`
+SELECT id, chat_jid, sender_jid, wa_id, type,
+	COALESCE(content, ''), COALESCE(media_type, ''), COALESCE(media_size, 0),
+	COALESCE(media_url, ''), media_key, COALESCE(caption, ''),
+	timestamp, is_from_me, is_read, raw_proto, created_at
+FROM messages WHERE chat_jid = ?
+ORDER BY timestamp ASC, rowid ASC
+LIMIT 1`, chatJID)
+
+	var msg models.Message
+	var isFromMe, isRead int
+	err := row.Scan(
+		&msg.ID, &msg.ChatJID, &msg.SenderJID, &msg.WaID, &msg.Type,
+		&msg.Content, &msg.MediaType, &msg.MediaSize,
+		&msg.MediaURL, &msg.MediaKey, &msg.Caption,
+		&msg.Timestamp, &isFromMe, &isRead, &msg.RawProto, &msg.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	msg.IsFromMe, msg.IsRead = isFromMe == 1, isRead == 1
+	return &msg, nil
+}
+
+// CountMessages counts stored messages of a chat; backfill uses the delta
+// around a history request to report how much was imported.
+func (s *Store) CountMessages(chatJID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE chat_jid = ?`, chatJID).Scan(&n)
+	return n, err
 }
 
 // GetMessagesPage returns up to limit messages for a chat ordered newest

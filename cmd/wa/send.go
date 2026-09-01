@@ -43,7 +43,7 @@ var sendTextCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
-		printOutput(resp)
+		printSendOutput(resp)
 	},
 }
 
@@ -85,7 +85,7 @@ func makeSendMediaCmd(use, short, msgType string, needsCaption bool) *cobra.Comm
 			if err != nil {
 				exitError(err.Error(), 1)
 			}
-			printOutput(resp)
+			printSendOutput(resp)
 		},
 	}
 	if needsCaption {
@@ -117,7 +117,7 @@ var sendLocationCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
-		printOutput(resp)
+		printSendOutput(resp)
 	},
 }
 
@@ -136,7 +136,7 @@ var sendContactCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
-		printOutput(resp)
+		printSendOutput(resp)
 	},
 }
 

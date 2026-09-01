@@ -1,0 +1,42 @@
+# wa serve as a systemd service (issue #23).
+#
+# Install (run as the user that owns the WhatsApp session — the session
+# lives in SQLite files under that user's home, typically
+# ~/.config/wa/whatsmeow.db):
+#
+#   sudo cp deploy/wa.service /etc/systemd/system/
+#   sudo systemctl edit wa   # set User= and, if needed, Environment=
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wa
+#   journalctl -u wa -f
+#
+# One process per linked account: the WhatsApp pairing and the message
+# store are local files (see README, "Running in Kubernetes" — the same
+# single-instance constraint applies to two systemd units).
+
+[Unit]
+Description=wa — WhatsApp CLI/API server (wa serve)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Set to the user whose home holds the WhatsApp session (default: the
+# invoking user, which for a system unit is wrong — set it explicitly).
+User=
+ExecStart=/usr/local/bin/wa serve
+Restart=on-failure
+RestartSec=5
+
+# The session is file state, not process state: on a crash or upgrade,
+# restarting picks up where the pairing left off. No StopTimeout games.
+TimeoutStopSec=30
+
+# Hardening that is safe for this workload; tune per host.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=tmpfiles
+
+[Install]
+WantedBy=multi-user.target

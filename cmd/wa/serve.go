@@ -31,8 +31,10 @@ var (
 	serveWriteConfg bool
 )
 
-// version is reported by /api/v1/healthz and friends. A var, not a const, so
-// a release build can stamp it with -ldflags "-X main.version=...".
+// version, commit and buildDate are reported by /api/v1/healthz and friends
+// and printed by `wa version`. Vars, not consts, so a release build can
+// stamp them: -ldflags "-X main.version=1.2.3 -X main.commit=abc123 -X
+// main.buildDate=2026-01-01".
 var version = "0.1.0"
 
 var serveCmd = &cobra.Command{

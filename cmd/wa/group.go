@@ -29,7 +29,11 @@ var groupCreateCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 1)
 		}
-		printOutput(group)
+		if outputFormat == "json" {
+			printOutput(group)
+		} else {
+			fmt.Printf("Created group %s (%s)\n", group.Name, group.JID)
+		}
 	},
 }
 
@@ -70,7 +74,23 @@ var groupInfoCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
-		printOutput(group)
+		if outputFormat == "json" {
+			printOutput(group)
+		} else {
+			fmt.Printf("%s  %s  (%d members)\n", group.JID, group.Name, len(group.Participants))
+			if group.Topic != "" {
+				fmt.Printf("Topic: %s\n", group.Topic)
+			}
+			for _, p := range group.Participants {
+				role := "member"
+				if p.IsSuperAdmin {
+					role = "superadmin"
+				} else if p.IsAdmin {
+					role = "admin"
+				}
+				fmt.Printf("  %s  [%s]\n", p.JID, role)
+			}
+		}
 	},
 }
 
