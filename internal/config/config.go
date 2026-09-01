@@ -281,9 +281,14 @@ func Save(path string, cfg *Config) error {
 }
 
 // GenerateAPIKey creates a random API key with the "wa_" prefix.
+// A crypto/rand failure means the OS has no entropy source, in which case
+// there is no safe key to generate, so this panics rather than returning
+// a zero-filled key that would be identical on every machine.
 func GenerateAPIKey() string {
 	b := make([]byte, 24)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("generating API key: %v", err))
+	}
 	return "wa_" + hex.EncodeToString(b)
 }
 
