@@ -1,13 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"image/png"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/skip2/go-qrcode"
+	"github.com/boombuler/barcode/qr"
 )
 
 // stateConnected is the ConnectionStatus.State value that means the WhatsApp
@@ -86,9 +88,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate QR code image as base64
-	qrPNG, err := qrcode.Encode(evt.Code, qrcode.Medium, 256)
+	// Generate QR code image as base64. boombuler/barcode replaces the
+	// unmaintained skip2/go-qrcode pin (issue #20); M error correction
+	// (15% recovery) is plenty for the short pairing string.
+	img, err := qr.Encode(evt.Code, qr.M, qr.Auto)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "QR_ERROR", err.Error())
+		return
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
 		writeError(w, http.StatusInternalServerError, "QR_ERROR", err.Error())
 		return
 	}
@@ -96,7 +105,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.login.setAttempt(evt.Code)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"qr_code_base64": base64.StdEncoding.EncodeToString(qrPNG),
+		"qr_code_base64": base64.StdEncoding.EncodeToString(buf.Bytes()),
 		"qr_code_text":   evt.Code,
 	})
 
@@ -129,8 +138,11 @@ func (s *Server) handleLoginStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"state": state, "attempt": attempt}
 	if code != "" {
 		out["qr_code_text"] = code
-		if png, err := qrcode.Encode(code, qrcode.Medium, 256); err == nil {
-			out["qr_code_base64"] = base64.StdEncoding.EncodeToString(png)
+		if img, err := qr.Encode(code, qr.M, qr.Auto); err == nil {
+			var buf bytes.Buffer
+			if png.Encode(&buf, img) == nil {
+				out["qr_code_base64"] = base64.StdEncoding.EncodeToString(buf.Bytes())
+			}
 		}
 	}
 	if errMsg != "" {

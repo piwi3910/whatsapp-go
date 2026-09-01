@@ -40,6 +40,9 @@ type Service interface {
 	MarkRead(ctx context.Context, messageID string) error
 	GetMessages(ctx context.Context, chatJID string, limit int, before int64) ([]models.Message, error)
 	GetMessage(ctx context.Context, messageID string) (*models.Message, error)
+	// SyncHistory backfills past messages of a chat from the primary device
+	// (issue #21): returns how many were imported into the store.
+	SyncHistory(ctx context.Context, chatJID string, count int) (int, error)
 
 	// Groups
 	CreateGroup(ctx context.Context, name string, participants []string) (*models.Group, error)

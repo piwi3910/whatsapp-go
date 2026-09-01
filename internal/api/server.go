@@ -119,6 +119,9 @@ func NewServer(svc whatsapp.Service, st *store.Store, disp *webhook.Dispatcher, 
 		r.Post("/api/v1/messages/{id}/react", s.handleReactMessage)
 		r.Post("/api/v1/messages/{id}/read", s.handleMarkRead)
 
+		// History
+		r.Post("/api/v1/history/sync", s.handleHistorySync)
+
 		// Groups
 		r.Post("/api/v1/groups", s.handleCreateGroup)
 		r.Get("/api/v1/groups", s.handleListGroups)

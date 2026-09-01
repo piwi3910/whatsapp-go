@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/piwi3910/whatsapp-go/internal/config"
+	"github.com/piwi3910/whatsapp-go/internal/models"
 )
 
 var (
@@ -63,6 +64,21 @@ func printOutput(data any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	enc.Encode(data)
+}
+
+// printSendOutput prints a send confirmation: human-readable by default,
+// JSON with --output json (issue #5). Accepts any so the media command's
+// `var resp any` compiles unchanged.
+func printSendOutput(resp any) {
+	if outputFormat == "json" {
+		printOutput(resp)
+		return
+	}
+	if r, ok := resp.(*models.SendResponse); ok {
+		fmt.Printf("Sent: %s\n", r.MessageID)
+		return
+	}
+	fmt.Println("Sent.")
 }
 
 // exitError prints an error message and exits.

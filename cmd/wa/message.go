@@ -63,7 +63,24 @@ var messageInfoCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
-		printOutput(msg)
+		if outputFormat == "json" {
+			printOutput(msg)
+		} else {
+			ts := time.Unix(msg.Timestamp, 0).Format("2006-01-02 15:04:05")
+			dir := "<-"
+			if msg.IsFromMe {
+				dir = "->"
+			}
+			fmt.Printf("ID:      %s\n", msg.ID)
+			fmt.Printf("Chat:    %s\n", msg.ChatJID)
+			fmt.Printf("Sent:    %s %s\n", ts, dir)
+			if msg.Content != "" {
+				fmt.Printf("Content: %s\n", msg.Content)
+			}
+			if msg.Caption != "" {
+				fmt.Printf("Caption: %s\n", msg.Caption)
+			}
+		}
 	},
 }
 

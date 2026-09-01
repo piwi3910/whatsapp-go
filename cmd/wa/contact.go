@@ -53,7 +53,18 @@ var contactInfoCmd = &cobra.Command{
 		if err != nil {
 			exitError(err.Error(), 3)
 		}
-		printOutput(contact)
+		if outputFormat == "json" {
+			printOutput(contact)
+		} else {
+			name := contact.Name
+			if name == "" {
+				name = contact.PushName
+			}
+			fmt.Printf("%s  %s\n", contact.JID, name)
+			if contact.Status != "" {
+				fmt.Printf("Status: %s\n", contact.Status)
+			}
+		}
 	},
 }
 

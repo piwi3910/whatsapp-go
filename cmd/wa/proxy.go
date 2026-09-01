@@ -258,6 +258,21 @@ func (p *proxyClient) GetMessage(ctx context.Context, messageID string) (*models
 	var msg models.Message
 	return &msg, p.decodeResponse(resp, &msg)
 }
+
+func (p *proxyClient) SyncHistory(ctx context.Context, chatJID string, count int) (int, error) {
+	body := map[string]any{"chat_jid": chatJID, "count": count}
+	resp, err := p.do(ctx, "POST", "/api/v1/history/sync", body)
+	if err != nil {
+		return 0, err
+	}
+	var out struct {
+		Imported int `json:"imported"`
+	}
+	if err := p.decodeResponse(resp, &out); err != nil {
+		return 0, err
+	}
+	return out.Imported, nil
+}
 func (p *proxyClient) CreateGroup(ctx context.Context, name string, participants []string) (*models.Group, error) {
 	resp, err := p.do(ctx, "POST", "/api/v1/groups", map[string]any{"name": name, "participants": participants})
 	if err != nil {
