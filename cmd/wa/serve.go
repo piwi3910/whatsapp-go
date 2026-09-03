@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -342,12 +343,26 @@ func superviseConnection(ctx context.Context, c connSupervisorClient, cfg superv
 
 // jitter spreads retries over [d/2, d) so restarted replicas do not
 // synchronise into a thundering herd against WhatsApp's servers.
+// crypto/rand, not math/rand: the value only needs to be spread, not
+// secret, but the gate (and good habit) disallows the math package.
 func jitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return 0
 	}
 	half := d / 2
-	return half + time.Duration(rand.Int64N(int64(half)+1))
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		// No OS entropy: fall back to the midpoint rather than 0. The
+		// backoff still works, it just loses its spread.
+		return half
+	}
+	// The modulo bias of 8 random bytes is astronomically smaller than
+	// the spread itself; spreading is the whole point, not a lottery.
+	// Mod in uint64 first: the int64 cast of a high-bit-set value is
+	// negative and would break the [d/2, d) range.
+	bound := uint64(int64(half) + 1)
+	n := int64(binary.LittleEndian.Uint64(buf[:]) % bound)
+	return half + time.Duration(n)
 }
 
 func init() {
