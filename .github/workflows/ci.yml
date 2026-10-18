@@ -3,7 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  # Integration tier: container image builds run here, never on a PR.
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref: nothing here needs to finish for an
 # older commit.
@@ -51,6 +56,9 @@ jobs:
         run: go test -race ./...
 
   docker:
+    # Integration tier: building the image needs the container toolchain, so it
+    # runs nightly/manually, never on a pull request.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
